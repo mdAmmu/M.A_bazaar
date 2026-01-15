@@ -1,0 +1,1563 @@
+import { useState, useEffect } from 'react';
+import { Package, ShoppingCart, LogOut, Edit, Trash2, Plus, X, Users, CreditCard, BarChart3, TrendingUp, Upload } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { supabase, Product, Order, OrderItem, Profile } from '../../lib/supabase';
+import BulkProductUpload from './BulkProductUpload';
+
+interface OrderWithItems extends Order {
+  order_items: (OrderItem & { products: Product })[];
+  profiles: { name: string; email: string; phone: string; address: string };
+}
+
+interface DashboardStats {
+  totalProducts: number;
+  totalOrders: number;
+  totalRevenue: number;
+  lowStockProducts: number;
+  totalUsers: number;
+  pendingOrders: number;
+}
+
+interface MonthlySales {
+  month: string;
+  sales: number;
+}
+
+type AdminTab = 'overview' | 'products' | 'orders' | 'users' | 'payments' | 'analytics';
+
+export default function AdminDashboard() {
+  const { profile, signOut } = useAuth();
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<OrderWithItems[]>([]);
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalProducts: 0,
+    totalOrders: 0,
+    totalRevenue: 0,
+    lowStockProducts: 0,
+    totalUsers: 0,
+    pendingOrders: 0,
+  });
+  const [monthlySales, setMonthlySales] = useState<MonthlySales[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [productForm, setProductForm] = useState({
+    name: '',
+    description: '',
+    price: '',
+    image_url: '',
+    stock: '',
+    category: '', 
+  });
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [showEditOrderModal, setShowEditOrderModal] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<OrderWithItems | null>(null);
+  const [editingOrderItems, setEditingOrderItems] = useState<(OrderItem & { products: Product })[]>([]);
+  const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
+  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
+
+  useEffect(() => {
+    fetchAllData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fetchAllData = async () => {
+    await Promise.all([
+      fetchProducts(),
+      fetchOrders(),
+      fetchUsers(),
+      calculateStats(),
+      calculateMonthlySales(),
+    ]);
+    setLoading(false);
+  };
+
+  const fetchProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setProducts(data || []);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // const fetchOrders = async () => {
+  //   try {
+  //     const { data, error } = await supabase
+  //       .from('orders')
+  //       .select(`
+  //         *,
+  //         profiles (name, email, phone, address),
+  //         order_items (
+  //           *,
+  //           products (*)
+  //         )
+  //       `)
+  //       .order('created_at', { ascending: false });
+
+  //     if (error) throw error;
+  //     setOrders((data as OrderWithItems[]) || []);
+  //   } catch (error) {
+  //     console.error('Error fetching orders:', error);
+  //   }
+  // };
+
+  const fetchOrders = async () => {
+    try {
+      const { data } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          profiles (
+            name,
+            email,
+            phone,
+            address
+          ),
+          order_items (
+            id,
+            quantity,
+            price,
+            subtotal,
+            products (
+              id,
+              name,
+              price,
+              image_url
+            )
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .throwOnError();
+
+      const processedOrders = (data || []).map((order: Order & {
+        profiles: { name: string; email: string; phone: string; address: string } | { name: string; email: string; phone: string; address: string }[];
+        order_items: (OrderItem & { products: Product })[]
+      }) => ({
+        ...order,
+        profiles: Array.isArray(order.profiles)
+          ? order.profiles[0]
+          : order.profiles,
+        order_items: order.order_items ?? [],
+      }));
+
+      setOrders(processedOrders);
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+      setOrders([]);
+    }
+  };
+
+
+  const fetchUsers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setUsers((data as Profile[]) || []);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  };
+
+  const calculateStats = async () => {
+    try {
+      const [productsRes, ordersRes, usersRes] = await Promise.all([
+        supabase.from('products').select('*', { count: 'exact' }),
+        supabase.from('orders').select('*', { count: 'exact' }),
+        supabase.from('profiles').select('*', { count: 'exact' }).eq('role', 'user'),
+      ]);
+
+      const lowStockRes = await supabase
+        .from('products')
+        .select('*')
+        .lt('stock', 10);
+
+      const pendingOrdersRes = await supabase
+        .from('orders')
+        .select('*', { count: 'exact' })
+        .eq('status', 'pending');
+
+      let totalRevenue = 0;
+      if (ordersRes.data) {
+        totalRevenue = ordersRes.data.reduce(
+          (sum, order) => sum + (order.final_amount || 0),
+          0
+        );
+      }
+
+      setStats({
+        totalProducts: productsRes.count || 0,
+        totalOrders: ordersRes.count || 0,
+        totalRevenue,
+        lowStockProducts: lowStockRes.data?.length || 0,
+        totalUsers: usersRes.count || 0,
+        pendingOrders: pendingOrdersRes.count || 0,
+      });
+    } catch (error) {
+      console.error('Error calculating stats:', error);
+    }
+  };
+
+  const calculateMonthlySales = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('final_amount, created_at')
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      const monthlyData: Record<string, number> = {};
+      if (data) {
+        data.forEach((order) => {
+          const date = new Date(order.created_at);
+          const monthKey = date.toLocaleString('default', {
+            month: 'short',
+            year: 'numeric',
+          });
+          monthlyData[monthKey] = (monthlyData[monthKey] || 0) + order.final_amount;
+        });
+      }
+
+      const monthlyArray = Object.entries(monthlyData).map(([month, sales]) => ({
+        month,
+        sales: Math.round(sales * 100) / 100,
+      }));
+
+      setMonthlySales(monthlyArray.slice(-12));
+    } catch (error) {
+      console.error('Error calculating monthly sales:', error);
+    }
+  };
+
+  // Around line 245-264
+const openProductModal = (product?: Product) => {
+  if (product) {
+    setEditingProduct(product);
+    setProductForm({
+      name: product.name,
+      description: product.description,
+      price: product.price.toString(),
+      image_url: product.image_url,
+      stock: product.stock.toString(),
+      category: product.category || '', // Add this line
+    });
+  } else {
+    setEditingProduct(null);
+    setProductForm({
+      name: '',
+      description: '',
+      price: '',
+      image_url: '',
+      stock: '',
+      category: '', // Add this line
+    });
+  }
+  setShowProductModal(true);
+};
+
+  const closeProductModal = () => {
+    setShowProductModal(false);
+    setEditingProduct(null);
+  };
+
+  const saveProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      const productData = {
+        name: productForm.name,
+        description: productForm.description,
+        price: parseFloat(productForm.price),
+        image_url: productForm.image_url,
+        stock: parseInt(productForm.stock),
+        category: productForm.category.trim() || null, // Add this line
+        updated_at: new Date().toISOString(),
+      };
+
+      if (editingProduct) {
+        const { error } = await supabase
+          .from('products')
+          .update(productData)
+          .eq('id', editingProduct.id);
+
+        if (error) throw error;
+        alert('Product updated successfully!');
+      } else {
+        const { error } = await supabase
+          .from('products')
+          .insert([productData]);
+
+        if (error) throw error;
+        alert('Product created successfully!');
+      }
+
+      closeProductModal();
+      await fetchProducts();
+    } catch (error) {
+      console.error('Error saving product:', error);
+      alert('Failed to save product');
+    }
+  };
+
+  const deleteProduct = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this product?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      alert('Product deleted successfully!');
+      await fetchProducts();
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      alert('Failed to delete product');
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('id', orderId);
+
+      if (error) throw error;
+      await fetchOrders();
+    } catch (error) {
+      console.error('Error updating order status:', error);
+      alert('Failed to update order status');
+    }
+  };
+
+  const handleLogout = async () => {
+    if (confirm('Are you sure you want to logout?')) {
+      await signOut();
+    }
+  };
+
+  // Group orders by day
+  const groupOrdersByDay = () => {
+    const grouped: Record<string, OrderWithItems[]> = {};
+    orders.forEach((order) => {
+      const date = new Date(order.created_at);
+      const dayKey = date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+      if (!grouped[dayKey]) {
+        grouped[dayKey] = [];
+      }
+      grouped[dayKey].push(order);
+    });
+    return grouped;
+  };
+
+  const getOrderDays = () => {
+    const grouped = groupOrdersByDay();
+    // Sort days by getting the first order's date from each day
+    return Object.keys(grouped).sort((a, b) => {
+      const dateA = grouped[a][0]?.created_at ? new Date(grouped[a][0].created_at).getTime() : 0;
+      const dateB = grouped[b][0]?.created_at ? new Date(grouped[b][0].created_at).getTime() : 0;
+      return dateB - dateA; // Most recent first
+    });
+  };
+
+  const getOrdersForDay = (day: string) => {
+    const grouped = groupOrdersByDay();
+    return grouped[day] || [];
+  };
+
+  // Edit order functions
+  const openEditOrderModal = (order: OrderWithItems) => {
+    setEditingOrder(order);
+    setEditingOrderItems([...order.order_items]);
+    setShowEditOrderModal(true);
+  };
+
+  const closeEditOrderModal = () => {
+    setShowEditOrderModal(false);
+    setEditingOrder(null);
+    setEditingOrderItems([]);
+  };
+
+  const removeOrderItem = (itemId: string) => {
+    if (editingOrderItems.length <= 1) {
+      alert('An order must have at least one item. You cannot remove the last item.');
+      return;
+    }
+    setEditingOrderItems((items) => items.filter((item) => item.id !== itemId));
+  };
+
+  const updateOrderItemQuantity = (itemId: string, newQuantity: number) => {
+    if (newQuantity < 1) return;
+    setEditingOrderItems((items) =>
+      items.map((item) =>
+        item.id === itemId
+          ? {
+            ...item,
+            quantity: newQuantity,
+            subtotal: item.price * newQuantity,
+          }
+          : item
+      )
+    );
+  };
+
+  const recalculateOrderTotals = () => {
+    if (!editingOrder) {
+      return { subtotal: 0, deliveryCharge: 0, discount: 0, finalAmount: 0 };
+    }
+    const subtotal = editingOrderItems.reduce((sum, item) => sum + item.subtotal, 0);
+    const deliveryCharge = editingOrder.delivery_charge || 0;
+    const discount = editingOrder.discount || 0;
+    const finalAmount = subtotal + deliveryCharge - discount;
+    return { subtotal, deliveryCharge, discount, finalAmount };
+  };
+
+  const saveOrderChanges = async () => {
+    if (!editingOrder) return;
+
+    const { subtotal, finalAmount } = recalculateOrderTotals();
+
+    try {
+      
+      const updates = editingOrderItems.map((item) => ({
+        id: item.id,
+        order_id: editingOrder.id,
+        product_id: item.product_id ?? item.products?.id,
+        quantity: item.quantity,
+        price: item.price ?? item.products?.price,
+        subtotal: item.subtotal,
+      }));
+      
+
+      // ✅ Delete removed items
+      const originalItemIds = editingOrder.order_items.map(item => item.id);
+      const currentItemIds = editingOrderItems.map(item => item.id);
+      const itemsToDelete = originalItemIds.filter(
+        id => !currentItemIds.includes(id)
+      );
+
+      if (itemsToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('order_items')
+          .delete()
+          .in('id', itemsToDelete);
+
+        if (deleteError) throw deleteError;
+      }
+
+      // ✅ Update / Insert order items safely
+      const { error: updateItemsError } = await supabase
+        .from('order_items')
+        .upsert(updates);
+
+      if (updateItemsError) throw updateItemsError;
+
+      // ✅ Update order totals
+      const { error: orderError } = await supabase
+        .from('orders')
+        .update({
+          total_amount: subtotal,
+          final_amount: finalAmount,
+        })
+        .eq('id', editingOrder.id);
+
+      if (orderError) throw orderError;
+
+      alert('Order updated successfully!');
+
+      closeEditOrderModal();
+
+      // 🔁 Force fresh reload
+      setLoading(true);
+      await Promise.all([
+        fetchOrders(),
+        calculateStats(),
+        calculateMonthlySales(),
+      ]);
+      setLoading(false);  
+
+    } catch (error: unknown) {
+      console.error('FULL ERROR:', error);
+      alert(error instanceof Error ? error.message : 'Failed to update order');
+    }
+  };
+
+  const generateBillNumber = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const t = String(now.getTime()).slice(-6);
+    return `INV-${y}${m}${d}-${t}`;
+  };
+
+  const printBillForOrder = async (order: OrderWithItems) => {
+    if (!order?.id) return;
+    if (!order.order_items || order.order_items.length === 0) {
+      alert('Cannot print bill: order has no items');
+      return;
+    }
+
+    setPrintingOrderId(order.id);
+    try {
+      // Decrement stock for each product in this order
+      for (const item of order.order_items) {
+        const productId = item.product_id ?? item.products?.id;
+        if (!productId) continue;
+
+        const { data: product, error: productError } = await supabase
+          .from('products')
+          .select('stock')
+          .eq('id', productId)
+          .maybeSingle();
+
+        if (productError) {
+          console.error('Error fetching product stock:', productError);
+          continue;
+        }
+
+        const currentStock = (product as { stock: number } | null)?.stock ?? 0;
+        const newStock = Math.max(0, currentStock - item.quantity);
+
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({ stock: newStock })
+          .eq('id', productId);
+
+        if (updateError) {
+          console.error('Error updating product stock:', updateError);
+        }
+      }
+
+      const customer = order.profiles;
+      const w = window.open('', '_blank', 'width=900,height=700');
+      if (!w) {
+        alert('Popup blocked. Please allow popups to print.');
+        return;
+      }
+
+      const safe = (v: unknown) => String(v ?? '');
+      const rows = order.order_items.map((it) => `
+        <tr>
+          <td style="padding:8px;border-bottom:1px solid #eee;">${safe(it.products?.name || 'Unknown Product')}</td>
+          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${safe(it.quantity)}</td>
+          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">$${Number(it.price ?? it.products?.price ?? 0).toFixed(2)}</td>
+          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">$${Number(it.subtotal).toFixed(2)}</td>
+        </tr>
+      `).join('');
+
+      const totalAmount = Number(order.total_amount || 0);
+      const delivery = Number(order.delivery_charge || 0);
+      const discount = Number(order.discount || 0);
+      const final = Number(order.final_amount || 0);
+      const billNo = generateBillNumber();
+
+      w.document.write(`
+        <html>
+          <head>
+            <title>${billNo}</title>
+            <meta charset="utf-8" />
+          </head>
+          <body style="font-family: Arial, sans-serif; padding: 24px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+              <div>
+                <h1 style="margin:0;">Invoice</h1>
+                <div style="margin-top:8px;color:#555;">Bill No: <strong>${billNo}</strong></div>
+                <div style="margin-top:4px;color:#555;">Order: ${order.id}</div>
+                <div style="margin-top:4px;color:#555;">Printed: ${new Date().toLocaleString()}</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-weight:bold;">Customer</div>
+                <div>${safe(customer?.name)}</div>
+                <div>${safe(customer?.email)}</div>
+                <div>${safe(customer?.phone)}</div>
+                <div>${safe(customer?.address)}</div>
+              </div>
+            </div>
+
+            <h2 style="margin-top:24px;">Items</h2>
+            <table style="width:100%;border-collapse:collapse;">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:8px;border-bottom:2px solid #ddd;">Item</th>
+                  <th style="text-align:right;padding:8px;border-bottom:2px solid #ddd;">Qty</th>
+                  <th style="text-align:right;padding:8px;border-bottom:2px solid #ddd;">Price</th>
+                  <th style="text-align:right;padding:8px;border-bottom:2px solid #ddd;">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+
+            <div style="margin-top:24px;display:flex;justify-content:flex-end;">
+              <div style="min-width:320px;">
+                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Subtotal</span><span>$${totalAmount.toFixed(2)}</span></div>
+                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Delivery</span><span>$${delivery.toFixed(2)}</span></div>
+                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Discount</span><span>-$${discount.toFixed(2)}</span></div>
+                <div style="display:flex;justify-content:space-between;margin:12px 0;padding-top:12px;border-top:2px solid #ddd;font-weight:bold;font-size:18px;">
+                  <span>Total</span><span>$${final.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `);
+      w.document.close();
+      w.focus();
+      w.print();
+    } catch (error) {
+      console.error('Error printing bill:', error);
+      alert('Failed to print bill');
+    } finally {
+      setPrintingOrderId(null);
+    }
+  };
+
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
+              <p className="text-sm text-gray-600">Welcome, {profile?.name}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+            >
+              <LogOut className="h-5 w-5" />
+              <span>Logout</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="flex flex-wrap gap-2 mb-6">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold transition text-sm ${activeTab === 'overview'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+          >
+            <TrendingUp className="h-4 w-4" />
+            <span>Overview</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('products')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold transition text-sm ${activeTab === 'products'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+          >
+            <Package className="h-4 w-4" />
+            <span>Products</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('orders')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold transition text-sm ${activeTab === 'orders'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+          >
+            <ShoppingCart className="h-4 w-4" />
+            <span>Orders</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold transition text-sm ${activeTab === 'users'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+          >
+            <Users className="h-4 w-4" />
+            <span>Users</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('payments')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold transition text-sm ${activeTab === 'payments'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+          >
+            <CreditCard className="h-4 w-4" />
+            <span>Payments</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold transition text-sm ${activeTab === 'analytics'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+          >
+            <BarChart3 className="h-4 w-4" />
+            <span>Analytics</span>
+          </button>
+        </div>
+
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-600 text-sm">Total Products</p>
+                    <p className="text-3xl font-bold text-gray-900">
+                      {stats.totalProducts}
+                    </p>
+                  </div>
+                  <Package className="h-10 w-10 text-blue-600 opacity-20" />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-600 text-sm">Total Orders</p>
+                    <p className="text-3xl font-bold text-gray-900">
+                      {stats.totalOrders}
+                    </p>
+                  </div>
+                  <ShoppingCart className="h-10 w-10 text-green-600 opacity-20" />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-600 text-sm">Total Revenue</p>
+                    <p className="text-3xl font-bold text-gray-900">
+                      ₹{stats.totalRevenue}
+                    </p>
+                  </div>
+                  <TrendingUp className="h-10 w-10 text-purple-600 opacity-20" />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-600 text-sm">Low Stock Products</p>
+                    <p className="text-3xl font-bold text-gray-900">
+                      {stats.lowStockProducts}
+                    </p>
+                  </div>
+                  <Package className="h-10 w-10 text-red-600 opacity-20" />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-600 text-sm">Total Users</p>
+                    <p className="text-3xl font-bold text-gray-900">
+                      {stats.totalUsers}
+                    </p>
+                  </div>
+                  <Users className="h-10 w-10 text-orange-600 opacity-20" />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-600 text-sm">Pending Orders</p>
+                    <p className="text-3xl font-bold text-gray-900">
+                      {stats.pendingOrders}
+                    </p>
+                  </div>
+                  <ShoppingCart className="h-10 w-10 text-yellow-600 opacity-20" />
+                </div>
+              </div>
+            </div>
+
+            {stats.lowStockProducts > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
+                <h3 className="text-lg font-bold text-yellow-900 mb-4">
+                  Low Stock Alert
+                </h3>
+                <p className="text-yellow-800">
+                  You have {stats.lowStockProducts} product(s) with low stock levels (less than 10 units). Please consider restocking them.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'products' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">Products</h2>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowBulkUploadModal(true)}
+                  className="flex items-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+                >
+                  <Upload className="h-5 w-5" />
+                  <span>Bulk Products</span>
+                </button>
+                <button
+                  onClick={() => openProductModal()}
+                  className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                >
+                  <Plus className="h-5 w-5" />
+                  <span>Add Product</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {products.map((product) => (
+                <div
+                  key={product.id}
+                  className="bg-white rounded-xl shadow-md overflow-hidden"
+                >
+                  <img
+                    src={product.image_url}
+                    alt={product.name}
+                    className="w-full h-48 object-cover"
+                  />
+                  <div className="p-4">
+                    <h3 className="font-semibold text-gray-900 mb-1">
+                      {product.name}
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                      {product.description}
+                    </p>
+                    <p className="text-xl font-bold text-blue-600 mb-2">
+                      ₹{product.price.toFixed(2)}
+                    </p>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Stock: {product.stock}
+                    </p>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => openProductModal(product)}
+                        className="flex-1 flex items-center justify-center space-x-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition"
+                      >
+                        <Edit className="h-4 w-4" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        onClick={() => deleteProduct(product.id)}
+                        className="flex-1 flex items-center justify-center space-x-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'orders' && (
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Orders</h2>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              </div>
+            ) : selectedDay === null ? (
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Select a Day</h3>
+                <div className="space-y-2">
+                  {getOrderDays().map((day) => {
+                    const dayOrders = getOrdersForDay(day);
+                    return (
+                      <button
+                        key={day}
+                        onClick={() => setSelectedDay(day)}
+                        className="w-full bg-white rounded-xl shadow-md p-4 hover:shadow-lg transition text-left"
+                      >
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="font-semibold text-gray-900">{day}</p>
+                            <p className="text-sm text-gray-600">
+                              {dayOrders.length} order{dayOrders.length !== 1 ? 's' : ''}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-blue-600">
+                             ₹{dayOrders.reduce((sum, o) => sum + (o.final_amount || 0), 0).toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {getOrderDays().length === 0 && (
+                    <div className="bg-white p-12 text-center rounded-xl">
+                      <p className="text-gray-600">No orders yet</p>
+                    </div>
+                  )}
+                </div>
+                {selectedDay && (
+                  <button
+                    onClick={() => setSelectedDay(null)}
+                    className="mt-4 text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    ← Back to Days
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-semibold text-gray-900">
+                    Orders for {selectedDay}
+                  </h3>
+                  <button
+                    onClick={() => setSelectedDay(null)}
+                    className="text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    ← Back to Days
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  {getOrdersForDay(selectedDay).map((order) => {
+                    const profile = order.profiles || {
+                      name: 'N/A',
+                      email: 'N/A',
+                      phone: 'N/A',
+                      address: 'N/A',
+                    };
+
+                    const orderItems = order.order_items || [];
+
+                    return (
+                      <div key={order.id} className="bg-white rounded-xl shadow-md p-6">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <p className="text-sm text-gray-600">
+                              Order ID: {order.id.slice(0, 8)}...
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Time: {new Date(order.created_at).toLocaleTimeString()}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => printBillForOrder(order)}
+                              disabled={printingOrderId === order.id}
+                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {printingOrderId === order.id ? 'Printing...' : 'Print Bill'}
+                            </button>
+                            <button
+                              onClick={() => openEditOrderModal(order)}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center space-x-1"
+                            >
+                              <Edit className="h-4 w-4" />
+                              <span>Edit Order</span>
+                            </button>
+                            <select
+                              value={order.status}
+                              onChange={(e) => updateOrderStatus(order.id, e.target.value)}
+                              className="px-4 py-2 border border-gray-300 rounded-lg"
+                            >
+                              <option value="pending">Pending</option>
+                              <option value="processing">Processing</option>
+                              <option value="shipped">Shipped</option>
+                              <option value="delivered">Delivered</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="mb-4">
+                          <h4 className="font-semibold mb-2">Customer Details</h4>
+                          <p>{profile.name}</p>
+                          <p>{profile.email}</p>
+                          <p>{profile.phone}</p>
+                          <p>{profile.address}</p>
+                        </div>
+
+                        <div className="mb-4">
+                          <h4 className="font-semibold mb-2">Order Items</h4>
+
+                          {orderItems.length > 0 ? (
+                            orderItems.map((item) => (
+                              <div
+                                key={item.id}
+                                className="flex justify-between text-sm"
+                              >
+                                <span>
+                                  {item.products?.name || 'Unknown Product'} × {item.quantity}
+                                </span>
+                                <span>
+                                  ₹{(item.subtotal || 0).toFixed(2)}
+                                </span>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-gray-500">
+                              No items in this order
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="border-t pt-4">
+                          <div className="flex justify-between text-sm">
+                            <span>Subtotal</span>
+                            <span>₹{(order.total_amount || 0).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span>Delivery</span>
+                            <span>₹{(order.delivery_charge || 0).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span>Discount</span>
+                            <span className="text-green-600">
+                              -₹{(order.discount || 0).toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between font-bold">
+                            <span>Total</span>
+                            <span className="text-blue-600">
+                            ₹{(order.final_amount || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+
+        {activeTab === 'users' && (
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">User Management</h2>
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Email
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Phone
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Role
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Joined
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {users.map((user) => (
+                      <tr key={user.id} className="hover:bg-gray-50 transition">
+                        <td className="px-6 py-4 text-sm text-gray-900">
+                          {user.name}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">
+                          {user.email}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">
+                          {user.phone || '-'}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${user.role === 'admin'
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-blue-100 text-blue-800'
+                              }`}
+                          >
+                            {user.role}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">
+                          {new Date(user.created_at).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {users.length === 0 && (
+                <div className="p-12 text-center">
+                  <p className="text-gray-600">No users found</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'payments' && (
+          <div>
+            <h2 className="text-2xl font-bold mb-6">Payment Transactions</h2>
+
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <div className="animate-spin h-12 w-12 border-b-2 border-blue-600 rounded-full"></div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {orders.map((order) => {
+                  const profile = order.profiles || { name: 'N/A', email: 'N/A' };
+
+                  return (
+                    <div key={order.id} className="bg-white p-6 rounded-xl shadow-md">
+                      <div className="flex justify-between">
+                        <div>
+                          <p>{profile.name}</p>
+                          <p className="text-sm text-gray-600">{profile.email}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(order.created_at).toLocaleString()}
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-blue-600">
+                          ₹{(order.final_amount || 0)}
+                          </p>
+                          <span className="text-xs font-semibold px-3 py-1 rounded-full bg-gray-100">
+                            {order.status}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {orders.length === 0 && (
+                  <div className="bg-white p-12 text-center rounded-xl">
+                    <p className="text-gray-600">No payment transactions</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+
+        {activeTab === 'analytics' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-6">
+                  Monthly Revenue
+                </h3>
+                <div className="space-y-4">
+                  {monthlySales.length > 0 ? (
+                    monthlySales.map((month) => {
+                      const maxSales = Math.max(
+                        ...monthlySales.map((m) => m.sales)
+                      );
+                      const percentage = (month.sales / maxSales) * 100;
+
+                      return (
+                        <div key={month.month}>
+                          <div className="flex justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-900">
+                              {month.month}
+                            </span>
+                            <span className="text-sm font-bold text-blue-600">
+                              ₹{month.sales.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full transition-all"
+                              style={{ width: `${percentage}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-gray-600">No sales data yet</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-6">
+                  Best Selling Products
+                </h3>
+                <div className="space-y-4">
+                  {orders.length > 0 ? (
+                    Object.entries(
+                      orders.reduce(
+                        (acc, order) => {
+                          order.order_items.forEach((item) => {
+                            const key = item.products.id;
+                            if (!acc[key]) {
+                              acc[key] = {
+                                name: item.products.name,
+                                quantity: 0,
+                                revenue: 0,
+                              };
+                            }
+                            acc[key].quantity += item.quantity;
+                            acc[key].revenue += item.subtotal;
+                          });
+                          return acc;
+                        },
+                        {} as Record<
+                          string,
+                          {
+                            name: string;
+                            quantity: number;
+                            revenue: number;
+                          }
+                        >
+                      )
+                    )
+                      .sort((a, b) => b[1].quantity - a[1].quantity)
+                      .slice(0, 5)
+                      .map(([, product]) => (
+                        <div
+                          key={product.name}
+                          className="flex items-center justify-between pb-4 border-b border-gray-200 last:border-0"
+                        >
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              {product.name}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {product.quantity} sold
+                            </p>
+                          </div>
+                          <p className="font-bold text-blue-600">
+                            ₹{product.revenue.toFixed(2)}
+                          </p>
+                        </div>
+                      ))
+                  ) : (
+                    <p className="text-gray-600">No sales data yet</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-md p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-6">
+                Profit Summary
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-gray-600 text-sm">Total Revenue</p>
+                  <p className="text-3xl font-bold text-blue-600 mt-2">
+                    ₹{stats.totalRevenue.toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-600 text-sm">Average Order Value</p>
+                  <p className="text-3xl font-bold text-green-600 mt-2">
+                    ₹
+                    {stats.totalOrders > 0
+                      ? (stats.totalRevenue / stats.totalOrders).toFixed(2)
+                      : '0.00'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showEditOrderModal && editingOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">Edit Order</h2>
+              <button
+                onClick={closeEditOrderModal}
+                className="p-2 hover:bg-gray-100 rounded-full transition"
+              >
+                <X className="h-6 w-6 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Order Items</h3>
+                <div className="space-y-3">
+                  {editingOrderItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900">
+                          {item.products?.name || 'Unknown Product'}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          ₹{item.price.toFixed(2)} each
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() =>
+                              updateOrderItemQuantity(item.id, item.quantity - 1)
+                            }
+                            className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition"
+                          >
+                            -
+                          </button>
+                          <span className="w-12 text-center font-semibold">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() =>
+                              updateOrderItemQuantity(item.id, item.quantity + 1)
+                            }
+                            className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <p className="font-bold text-gray-900 w-24 text-right">
+                          ₹{item.subtotal.toFixed(2)}
+                        </p>
+                        <button
+                          onClick={() => removeOrderItem(item.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {editingOrderItems.length === 0 && (
+                    <p className="text-center text-gray-500 py-8">
+                      No items in this order
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Subtotal</span>
+                    <span className="text-gray-900">
+                      ₹{recalculateOrderTotals().subtotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Delivery Charge</span>
+                    <span className="text-gray-900">
+                    ₹{recalculateOrderTotals().deliveryCharge.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Discount</span>
+                    <span className="text-green-600">
+                      -₹{recalculateOrderTotals().discount.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between font-bold text-lg pt-2 border-t">
+                    <span className="text-gray-900">Final Amount</span>
+                    <span className="text-blue-600">
+                    ₹{recalculateOrderTotals().finalAmount.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex space-x-4 pt-4">
+                <button
+                  onClick={saveOrderChanges}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
+                >
+                  Save Changes
+                </button>
+                <button
+                  onClick={closeEditOrderModal}
+                  className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showProductModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">
+                {editingProduct ? 'Edit Product' : 'Add Product'}
+              </h2>
+              <button
+                onClick={closeProductModal}
+                className="p-2 hover:bg-gray-100 rounded-full transition"
+              >
+                <X className="h-6 w-6 text-gray-600" />
+              </button>
+            </div>
+
+            <form onSubmit={saveProduct} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Product Name
+                </label>
+                <input
+                  type="text"
+                  value={productForm.name}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, name: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Description
+                </label>
+                <textarea
+                  value={productForm.description}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, description: e.target.value })
+                  }
+                  rows={3}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Price
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={productForm.price}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, price: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Image URL
+                </label>
+                <input
+                  type="url"
+                  value={productForm.image_url}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, image_url: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Category
+                </label>
+                <input
+                  type="text"
+                  value={productForm.category}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, category: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  placeholder="e.g., Electronics, Clothing, Books"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Optional: Add a category to help users filter products
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Stock
+                </label>
+                <input
+                  type="number"
+                  value={productForm.stock}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, stock: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  required
+                />
+              </div>
+
+              <div className="flex space-x-4 pt-4">
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
+                >
+                  {editingProduct ? 'Update Product' : 'Create Product'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeProductModal}
+                  className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showBulkUploadModal && (
+        <BulkProductUpload
+          onClose={() => setShowBulkUploadModal(false)}
+          onSuccess={() => {
+            fetchProducts();
+            calculateStats();
+          }}
+        />
+      )}
+    </div>
+  );
+}
