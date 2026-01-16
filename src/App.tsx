@@ -20,6 +20,8 @@ function AppContent() {
     setCurrentPage(page);
   };
 
+  
+
   if (profile?.role === 'admin') {
     return (
       <AuthGuard requireAdmin>

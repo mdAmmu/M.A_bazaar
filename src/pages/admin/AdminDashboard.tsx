@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Package, ShoppingCart, LogOut, Edit, Trash2, Plus, X, Users, CreditCard, BarChart3, TrendingUp, Upload } from 'lucide-react';
+import { Package, ShoppingCart, LogOut, Edit, Trash2, Plus, X, Users, CreditCard, BarChart3, TrendingUp, Upload, Printer } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase, Product, Order, OrderItem, Profile } from '../../lib/supabase';
 import BulkProductUpload from './BulkProductUpload';
@@ -45,11 +45,11 @@ export default function AdminDashboard() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState({
     name: '',
-    description: '',
     price: '',
+    mrp: '',
     image_url: '',
     stock: '',
-    category: '', 
+    category: '',
   });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [showEditOrderModal, setShowEditOrderModal] = useState(false);
@@ -244,30 +244,30 @@ export default function AdminDashboard() {
   };
 
   // Around line 245-264
-const openProductModal = (product?: Product) => {
-  if (product) {
-    setEditingProduct(product);
-    setProductForm({
-      name: product.name,
-      description: product.description,
-      price: product.price.toString(),
-      image_url: product.image_url,
-      stock: product.stock.toString(),
-      category: product.category || '', // Add this line
-    });
-  } else {
-    setEditingProduct(null);
-    setProductForm({
-      name: '',
-      description: '',
-      price: '',
-      image_url: '',
-      stock: '',
-      category: '', // Add this line
-    });
-  }
-  setShowProductModal(true);
-};
+  const openProductModal = (product?: Product) => {
+    if (product) {
+      setEditingProduct(product);
+      setProductForm({
+        name: product.name,
+        price: product.price.toString(),
+        mrp: product.mrp?.toString() || '',
+        image_url: product.image_url,
+        stock: product.stock.toString(),
+        category: product.category || '',
+      });
+    } else {
+      setEditingProduct(null);
+      setProductForm({
+        name: '',
+        price: '',
+        mrp: '',
+        image_url: '',
+        stock: '',
+        category: '',
+      });
+    }
+    setShowProductModal(true);
+  };
 
   const closeProductModal = () => {
     setShowProductModal(false);
@@ -278,15 +278,31 @@ const openProductModal = (product?: Product) => {
     e.preventDefault();
 
     try {
-      const productData = {
+      const productData: {
+        name: string;
+        price: number;
+        image_url: string;
+        stock: number;
+        updated_at: string;
+        mrp?: number | null;
+        category?: string;
+      } = {
         name: productForm.name,
-        description: productForm.description,
         price: parseFloat(productForm.price),
         image_url: productForm.image_url,
         stock: parseInt(productForm.stock),
-        category: productForm.category.trim() || null, // Add this line
         updated_at: new Date().toISOString(),
       };
+
+      // Include MRP if provided (only if column exists in database)
+      if (productForm.mrp && productForm.mrp.trim()) {
+        productData.mrp = parseFloat(productForm.mrp);
+      }
+
+      // Include category if provided (requires migration to be run)
+      if (productForm.category.trim()) {
+        productData.category = productForm.category.trim();
+      }
 
       if (editingProduct) {
         const { error } = await supabase
@@ -294,14 +310,22 @@ const openProductModal = (product?: Product) => {
           .update(productData)
           .eq('id', editingProduct.id);
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error updating product:', error);
+          alert(`Failed to update product: ${error.message}`);
+          return;
+        }
         alert('Product updated successfully!');
       } else {
         const { error } = await supabase
           .from('products')
           .insert([productData]);
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error creating product:', error);
+          alert(`Failed to create product: ${error.message}`);
+          return;
+        }
         alert('Product created successfully!');
       }
 
@@ -309,7 +333,8 @@ const openProductModal = (product?: Product) => {
       await fetchProducts();
     } catch (error) {
       console.error('Error saving product:', error);
-      alert('Failed to save product');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to save product: ${errorMessage}`);
     }
   };
 
@@ -323,13 +348,40 @@ const openProductModal = (product?: Product) => {
         .eq('id', id);
 
       if (error) throw error;
-      alert('Product deleted successfully!');
       await fetchProducts();
     } catch (error) {
       console.error('Error deleting product:', error);
       alert('Failed to delete product');
     }
   };
+
+  const deleteUser = async (id: string) => {
+    const isConfirmed = window.confirm(
+      'Are you sure you want to delete this user? This action cannot be undone.'
+    );
+    if (!isConfirmed) return;
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error deleting user:', error);
+        alert(`Failed to delete user: ${error.message}`);
+        return;
+      }
+
+      await fetchUsers();
+      // alert('User deleted successfully');
+    } catch (err) {
+      console.error('Error deleting user:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      alert(`Failed to delete user: ${errorMessage}`);
+    }
+  };
+
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     try {
@@ -343,6 +395,47 @@ const openProductModal = (product?: Product) => {
     } catch (error) {
       console.error('Error updating order status:', error);
       alert('Failed to update order status');
+    }
+  };
+
+  const deleteOrder = async (orderId: string) => {
+    const isConfirmed = window.confirm(
+      'Are you sure you want to delete this order? This action cannot be undone and will also delete all order items.'
+    );
+    if (!isConfirmed) return;
+
+    try {
+      // Delete order items first (due to foreign key constraint)
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .delete()
+        .eq('order_id', orderId);
+
+      if (itemsError) {
+        console.error('Error deleting order items:', itemsError);
+        alert(`Failed to delete order items: ${itemsError.message}`);
+        return;
+      }
+
+      // Then delete the order
+      const { error: orderError } = await supabase
+        .from('orders')
+        .delete()
+        .eq('id', orderId);
+
+      if (orderError) {
+        console.error('Error deleting order:', orderError);
+        alert(`Failed to delete order: ${orderError.message}`);
+        return;
+      }
+
+      await fetchOrders();
+      await calculateStats();
+      // alert('Order deleted successfully');
+    } catch (err) {
+      console.error('Error deleting order:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      alert(`Failed to delete order: ${errorMessage}`);
     }
   };
 
@@ -438,7 +531,7 @@ const openProductModal = (product?: Product) => {
     const { subtotal, finalAmount } = recalculateOrderTotals();
 
     try {
-      
+
       const updates = editingOrderItems.map((item) => ({
         id: item.id,
         order_id: editingOrder.id,
@@ -447,7 +540,7 @@ const openProductModal = (product?: Product) => {
         price: item.price ?? item.products?.price,
         subtotal: item.subtotal,
       }));
-      
+
 
       // ✅ Delete removed items
       const originalItemIds = editingOrder.order_items.map(item => item.id);
@@ -494,7 +587,7 @@ const openProductModal = (product?: Product) => {
         calculateStats(),
         calculateMonthlySales(),
       ]);
-      setLoading(false);  
+      setLoading(false);
 
     } catch (error: unknown) {
       console.error('FULL ERROR:', error);
@@ -818,22 +911,28 @@ const openProductModal = (product?: Product) => {
           <div>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-gray-900">Products</h2>
-              <div className="flex gap-3">
+              <div className="flex gap-3 sm:flex-row">
+                {/* Bulk Products */}
                 <button
                   onClick={() => setShowBulkUploadModal(true)}
-                  className="flex items-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+                  title="Bulk Products"
+                  className="flex items-center justify-center gap-2 bg-green-600 text-white px-2 py-2 sm:px-5 sm:py-3 rounded-full sm:rounded-lg hover:bg-green-700 transition"
                 >
                   <Upload className="h-5 w-5" />
-                  <span>Bulk Products</span>
+                  <span className="hidden sm:inline">Bulk Products</span>
                 </button>
+
+                {/* Add Product */}
                 <button
                   onClick={() => openProductModal()}
-                  className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                  title="Add Product"
+                  className="flex items-center justify-center gap-2 bg-blue-600 text-white px-2 py-2 sm:px-5 sm:py-3 rounded-full sm:rounded-lg hover:bg-blue-700 transition"
                 >
-                  <Plus className="h-5 w-5" />
-                  <span>Add Product</span>
+                  <Plus className="h-4 w-4" />
+                  <span className="hidden sm:inline">Add Product</span>
                 </button>
               </div>
+
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -842,21 +941,32 @@ const openProductModal = (product?: Product) => {
                   key={product.id}
                   className="bg-white rounded-xl shadow-md overflow-hidden"
                 >
-                  <img
-                    src={product.image_url}
-                    alt={product.name}
-                    className="w-full h-48 object-cover"
-                  />
+                  {/* Image Div */}
+                  <div className="w-full h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
+                    <img
+                      src={product.image_url}
+                      alt={product.name}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
                   <div className="p-4">
-                    <h3 className="font-semibold text-gray-900 mb-1">
+                    {/* Product Name */}
+                    <h3 className="font-semibold text-gray-900 mb-2">
                       {product.name}
                     </h3>
-                    <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                      {product.description}
-                    </p>
-                    <p className="text-xl font-bold text-blue-600 mb-2">
-                      ₹{product.price.toFixed(2)}
-                    </p>
+
+                    {/* Price and MRP Row */}
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-lg font-bold text-blue-600">
+                        ₹{product.price.toFixed(2)}
+                      </p>
+                      {product.mrp && (
+                        <p className="text-lg font-bold text-blue-600">
+                          Mrp: ₹{product.mrp.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+
                     <p className="text-sm text-gray-600 mb-4">
                       Stock: {product.stock}
                     </p>
@@ -912,7 +1022,7 @@ const openProductModal = (product?: Product) => {
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-bold text-blue-600">
-                             ₹{dayOrders.reduce((sum, o) => sum + (o.final_amount || 0), 0).toFixed(2)}
+                              ₹{dayOrders.reduce((sum, o) => sum + (o.final_amount || 0), 0).toFixed(2)}
                             </p>
                           </div>
                         </div>
@@ -969,25 +1079,45 @@ const openProductModal = (product?: Product) => {
                               Time: {new Date(order.created_at).toLocaleTimeString()}
                             </p>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap items-center justify-end">
+                            {/* Print */}
                             <button
                               onClick={() => printBillForOrder(order)}
                               disabled={printingOrderId === order.id}
-                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Print Bill"
+                              className="flex items-center justify-center gap-2 bg-green-600 text-white px-2 py-2 sm:px-4 sm:py-2 rounded-full sm:rounded-lg hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              {printingOrderId === order.id ? 'Printing...' : 'Print Bill'}
+                              <Printer className="h-4 w-4" />
+                              <span className="hidden sm:inline">
+                                {printingOrderId === order.id ? 'Printing...' : 'Print Bill'}
+                              </span>
                             </button>
+
+                            {/* Edit */}
                             <button
                               onClick={() => openEditOrderModal(order)}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center space-x-1"
+                              title="Edit Order"
+                              className="flex items-center justify-center gap-2 bg-blue-600 text-white px-2 py-2 sm:px-4 sm:py-2 rounded-full sm:rounded-lg hover:bg-blue-700 transition"
                             >
                               <Edit className="h-4 w-4" />
-                              <span>Edit Order</span>
+                              <span className="hidden sm:inline">Edit Order</span>
                             </button>
+
+                            {/* Delete */}
+                            <button
+                              onClick={() => deleteOrder(order.id)}
+                              title="Delete Order"
+                              className="flex items-center justify-center gap-2 bg-red-600 text-white px-2 py-2 sm:px-4 sm:py-2 rounded-full sm:rounded-lg hover:bg-red-700 transition"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="hidden sm:inline">Delete</span>
+                            </button>
+
+                            {/* Status Dropdown */}
                             <select
                               value={order.status}
                               onChange={(e) => updateOrderStatus(order.id, e.target.value)}
-                              className="px-4 py-2 border border-gray-300 rounded-lg"
+                              className="px-3 py-2 border border-gray-300 rounded-lg text-sm sm:w-auto"
                             >
                               <option value="pending">Pending</option>
                               <option value="processing">Processing</option>
@@ -996,6 +1126,7 @@ const openProductModal = (product?: Product) => {
                               <option value="cancelled">Cancelled</option>
                             </select>
                           </div>
+
                         </div>
 
                         <div className="mb-4">
@@ -1048,7 +1179,7 @@ const openProductModal = (product?: Product) => {
                           <div className="flex justify-between font-bold">
                             <span>Total</span>
                             <span className="text-blue-600">
-                            ₹{(order.final_amount || 0).toFixed(2)}
+                              ₹{(order.final_amount || 0).toFixed(2)}
                             </span>
                           </div>
                         </div>
@@ -1112,6 +1243,13 @@ const openProductModal = (product?: Product) => {
                         <td className="px-6 py-4 text-sm text-gray-600">
                           {new Date(user.created_at).toLocaleDateString()}
                         </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">
+                          <button
+                            onClick={() => deleteUser(user.id)}
+                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                          ><Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1152,7 +1290,7 @@ const openProductModal = (product?: Product) => {
 
                         <div className="text-right">
                           <p className="text-2xl font-bold text-blue-600">
-                          ₹{(order.final_amount || 0)}
+                            ₹{(order.final_amount || 0)}
                           </p>
                           <span className="text-xs font-semibold px-3 py-1 rounded-full bg-gray-100">
                             {order.status}
@@ -1383,7 +1521,7 @@ const openProductModal = (product?: Product) => {
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Delivery Charge</span>
                     <span className="text-gray-900">
-                    ₹{recalculateOrderTotals().deliveryCharge.toFixed(2)}
+                      ₹{recalculateOrderTotals().deliveryCharge.toFixed(2)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -1395,7 +1533,7 @@ const openProductModal = (product?: Product) => {
                   <div className="flex justify-between font-bold text-lg pt-2 border-t">
                     <span className="text-gray-900">Final Amount</span>
                     <span className="text-blue-600">
-                    ₹{recalculateOrderTotals().finalAmount.toFixed(2)}
+                      ₹{recalculateOrderTotals().finalAmount.toFixed(2)}
                     </span>
                   </div>
                 </div>
@@ -1438,6 +1576,21 @@ const openProductModal = (product?: Product) => {
             <form onSubmit={saveProduct} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Image URL
+                </label>
+                <input
+                  type="url"
+                  value={productForm.image_url}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, image_url: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Product Name
                 </label>
                 <input
@@ -1453,21 +1606,7 @@ const openProductModal = (product?: Product) => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Description
-                </label>
-                <textarea
-                  value={productForm.description}
-                  onChange={(e) =>
-                    setProductForm({ ...productForm, description: e.target.value })
-                  }
-                  rows={3}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Price
+                  Product Selling Unit Price
                 </label>
                 <input
                   type="number"
@@ -1483,16 +1622,17 @@ const openProductModal = (product?: Product) => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Image URL
+                  MRP (Maximum Retail Price)
                 </label>
                 <input
-                  type="url"
-                  value={productForm.image_url}
+                  type="number"
+                  step="0.01"
+                  value={productForm.mrp}
                   onChange={(e) =>
-                    setProductForm({ ...productForm, image_url: e.target.value })
+                    setProductForm({ ...productForm, mrp: e.target.value })
                   }
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  required
+                  placeholder="Optional"
                 />
               </div>
 

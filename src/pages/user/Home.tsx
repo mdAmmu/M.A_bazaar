@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { ShoppingCart, User, Search, Mic, Plus, Minus ,ReceiptText } from 'lucide-react';
+import { ShoppingCart, User, Search, Mic, Plus, Minus, ReceiptText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase, Product, CartItem } from '../../lib/supabase';
+import VoiceToOrderModal from '../user/VoiceToOrderModel';
+
 
 type Page = 'home' | 'profile' | 'cart' | 'checkout' | 'admin' | 'bills';
 
@@ -18,6 +20,8 @@ export default function Home({ onNavigate }: HomeProps) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+
 
   useEffect(() => {
     fetchProducts();
@@ -90,6 +94,7 @@ export default function Home({ onNavigate }: HomeProps) {
   };
 
   const addToCart = async (product: Product) => {
+
     try {
       const quantity = quantities[product.id] || 1;
       const existingItem = cartItems.find((item) => item.product_id === product.id);
@@ -113,7 +118,6 @@ export default function Home({ onNavigate }: HomeProps) {
 
       setQuantities((prev) => ({ ...prev, [product.id]: 1 }));
       await fetchCartItems();
-      alert('Added to cart!');
     } catch (error) {
       console.error('Error adding to cart:', error);
       alert('Failed to add to cart');
@@ -129,6 +133,34 @@ export default function Home({ onNavigate }: HomeProps) {
       </div>
     );
   }
+
+  const addVoiceItemsToCart = async (
+    items: { product: Product; quantity: number }[]
+  ) => {
+    for (const item of items) {
+      const existingItem = cartItems.find(
+        (c) => c.product_id === item.product.id
+      );
+
+      if (existingItem) {
+        await supabase
+          .from('cart_items')
+          .update({ quantity: existingItem.quantity + item.quantity })
+          .eq('id', existingItem.id);
+      } else {
+        await supabase.from('cart_items').insert([
+          {
+            user_id: profile?.id,
+            product_id: item.product.id,
+            quantity: item.quantity,
+          },
+        ]);
+      }
+    }
+
+    await fetchCartItems();
+  };
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -152,12 +184,23 @@ export default function Home({ onNavigate }: HomeProps) {
                 <p className="font-semibold text-gray-900">{profile?.name}</p>
               </div>
             </div>
+
             <div className="flex items-center space-x-4">
+              <button
+                onClick={() => {setVoiceOpen(true); }}
+                title="Voice to Order"
+                className="flex items-center justify-center gap-2 bg-blue-600 text-white px-2 py-2 sm:px-4 sm:py-2 rounded-full sm:rounded-lg font-semibold hover:bg-blue-700 transition"
+              >
+                <Mic className="h-5 w-5" />
+                <span className="hidden sm:inline">Voice to Order</span>
+              </button>
+
+
               <button
                 onClick={() => onNavigate('bills')}
                 className="p-2 hover:bg-gray-100 rounded-full transition"
               >
-                <ReceiptText  className="h-6 w-6 text-gray-700" />
+                <ReceiptText className="h-6 w-6 text-gray-700" />
               </button>
 
               <button
@@ -200,11 +243,10 @@ export default function Home({ onNavigate }: HomeProps) {
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setSelectedCategory(null)}
-                  className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
-                    selectedCategory === null
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === null
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
                 >
                   All
                 </button>
@@ -212,11 +254,10 @@ export default function Home({ onNavigate }: HomeProps) {
                   <button
                     key={category}
                     onClick={() => setSelectedCategory(category)}
-                    className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
-                      selectedCategory === category
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
+                    className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === category
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
                   >
                     {category}
                   </button>
@@ -237,24 +278,39 @@ export default function Home({ onNavigate }: HomeProps) {
               key={product.id}
               className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition"
             >
-              <img
-                src={product.image_url}
-                alt={product.name}
-                className="w-full h-48 object-cover"
-              />
-              <div className="p-4">
-                <h3 className="font-semibold text-gray-900 mb-1">{product.name}</h3>
-                <p className="text-sm text-gray-600 mb-3 line-clamp-2">{product.description}</p>
-                <p className="text-2xl font-bold text-blue-600 mb-4">
-                  ₹{Number(product.price.toFixed(2))}
-                </p>
+              {/* Image Div */}
+              <div className="w-full h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
+                <img
+                  src={product.image_url}
+                  alt={product.name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
 
+              <div className="p-4">
+                {/* Product Name */}
+                <h3 className="font-semibold text-gray-900 mb-2">{product.name}</h3>
+
+                {/* Price and MRP Row */}
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-lg font-bold text-blue-600">
+                    ₹{Number(product.price).toFixed(2)}
+                  </p>
+                  {product.mrp !== undefined && product.mrp !== null && (
+                    <p className="text-lg font-bold text-blue-600 ">
+                      ₹{Number(product.mrp).toFixed(2)}
+                    </p>
+                  )}
+                </div>
+
+
+                {/* Quantity Div */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium text-gray-700">Quantity:</span>
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => updateQuantity(product.id, -1)}
-                      className="p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition"
+                      className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition"
                     >
                       <Minus className="h-4 w-4 text-gray-700" />
                     </button>
@@ -263,21 +319,20 @@ export default function Home({ onNavigate }: HomeProps) {
                     </span>
                     <button
                       onClick={() => updateQuantity(product.id, 1)}
-                      className="p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition"
+                      className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition"
                     >
                       <Plus className="h-4 w-4 text-gray-700" />
                     </button>
                   </div>
                 </div>
 
+                {/* Add to Cart Button Div */}
                 <button
                   onClick={() => addToCart(product)}
-                  className="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition mb-2"
+                  className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition text-sm uppercase tracking-wide"
                 >
                   ADD TO CART
                 </button>
-
-                
               </div>
             </div>
           ))}
@@ -289,6 +344,14 @@ export default function Home({ onNavigate }: HomeProps) {
           </div>
         )}
       </main>
+
+      <VoiceToOrderModal
+        open={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        products={products}
+        onAddItems={addVoiceItemsToCart}
+      />
+
     </div>
   );
 }

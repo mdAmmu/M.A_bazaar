@@ -136,7 +136,7 @@ export default function Cart({ onNavigate }: CartProps) {
                     {item.products.name}
                   </h3>
                   <p className="text-sm text-gray-600 mt-1">
-                    ${item.products.price.toFixed(2)} each
+                    ₹{item.products.price.toFixed(2)} each
                   </p>
                   <div className="flex items-center mt-3 space-x-3">
                     <button
@@ -158,7 +158,7 @@ export default function Cart({ onNavigate }: CartProps) {
                 </div>
                 <div className="text-right">
                   <p className="text-xl font-bold text-blue-600">
-                  ₹{Number((item.products.price * item.quantity).toFixed(2))}
+                    ₹{Number((item.products.price * item.quantity).toFixed(2))}
                   </p>
                   <button
                     onClick={() => removeItem(item.id)}

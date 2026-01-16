@@ -25,6 +25,7 @@ export type Product = {
   name: string;
   description: string;
   price: number;
+  mrp?: number;
   image_url: string;
   stock: number;
   category?: string;

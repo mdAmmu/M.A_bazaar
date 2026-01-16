@@ -183,12 +183,7 @@ export default function Bills({ onNavigate }: BillsProps) {
                   {new Date(selectedBill.created_at).toLocaleString()}
                 </p>
               </div>
-              <button
-                onClick={() => printBill(selectedBill)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition"
-              >
-                Print
-              </button>
+              
             </div>
 
             <div className="space-y-3 mb-6">
