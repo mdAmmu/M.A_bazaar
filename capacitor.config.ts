@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.popatiya.mabazaar',
-  appName: 'M.A Bazaar',
+  appId: 'com.mabazaar.app',
+  appName: 'M.A_Bazaar_apk',
   webDir: 'dist'
 };
 

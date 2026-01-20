@@ -67,8 +67,8 @@ export default function Bills({ onNavigate }: BillsProps) {
       <tr>
         <td style="padding:8px;border-bottom:1px solid #eee;">${String(it.products?.name || 'Unknown Product')}</td>
         <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${it.quantity}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">$${Number(it.price ?? it.products?.price ?? 0).toFixed(2)}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">$${Number(it.subtotal).toFixed(2)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">₹${Number(it.price ?? it.products?.price ?? 0).toFixed(2)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">₹${Number(it.subtotal).toFixed(2)}</td>
       </tr>
     `).join('');
 
@@ -98,11 +98,11 @@ export default function Bills({ onNavigate }: BillsProps) {
 
           <div style="margin-top:24px;display:flex;justify-content:flex-end;">
             <div style="min-width:320px;">
-              <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Subtotal</span><span>$${Number(bill.total_amount).toFixed(2)}</span></div>
-              <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Delivery</span><span>$${Number(bill.delivery_charge).toFixed(2)}</span></div>
-              <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Discount</span><span>-$${Number(bill.discount).toFixed(2)}</span></div>
+              <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Subtotal</span><span>₹${Number(bill.total_amount).toFixed(2)}</span></div>
+              <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Delivery</span><span>₹${Number(bill.delivery_charge).toFixed(2)}</span></div>
+              <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Discount</span><span>-₹${Number(bill.discount).toFixed(2)}</span></div>
               <div style="display:flex;justify-content:space-between;margin:12px 0;padding-top:12px;border-top:2px solid #ddd;font-weight:bold;font-size:18px;">
-                <span>Total</span><span>$${Number(bill.final_amount).toFixed(2)}</span>
+                <span>Total</span><span>₹${Number(bill.final_amount).toFixed(2)}</span>
               </div>
             </div>
           </div>

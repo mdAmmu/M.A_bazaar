@@ -2,12 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-body{
-    padding-top: 50px;
-}
+
 
 
 /* admin product button style  */
 
 
+  
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
   

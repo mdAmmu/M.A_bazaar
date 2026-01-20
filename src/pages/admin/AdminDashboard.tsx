@@ -4,6 +4,20 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase, Product, Order, OrderItem, Profile } from '../../lib/supabase';
 import BulkProductUpload from './BulkProductUpload';
 
+type Page =
+  | 'home'
+  | 'profile'
+  | 'cart'
+  | 'checkout'
+  | 'bills'
+  | 'admin'
+  | 'createOrder'
+  | 'adminOrder';
+
+interface AdminDashboardProps {
+  onNavigate: (page: Page, id?: string) => void;
+}
+
 interface OrderWithItems extends Order {
   order_items: (OrderItem & { products: Product })[];
   profiles: { name: string; email: string; phone: string; address: string };
@@ -25,7 +39,7 @@ interface MonthlySales {
 
 type AdminTab = 'overview' | 'products' | 'orders' | 'users' | 'payments' | 'analytics';
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const { profile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [products, setProducts] = useState<Product[]>([]);
@@ -57,11 +71,150 @@ export default function AdminDashboard() {
   const [editingOrderItems, setEditingOrderItems] = useState<(OrderItem & { products: Product })[]>([]);
   const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
   const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+
+
+
 
   useEffect(() => {
     fetchAllData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // to filter the product by category
+
+
+
+  useEffect(() => {
+    let filtered = products;
+
+    // Apply category filter
+    if (selectedCategory) {
+      filtered = filtered.filter(
+        (product) => product.category?.toLowerCase() === selectedCategory.toLowerCase()
+      );
+    }
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(
+        (product) =>
+          product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          product.description.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    setFilteredProducts(filtered);
+  }, [searchQuery, selectedCategory, products]);
+
+  const categories = Array.from(
+    new Set(products.map((p) => p.category).filter((c): c is string => Boolean(c)))
+  ).sort();
+
+
+  // upload image in add the product form
+
+  const uploadImage = async (file: File) => {
+    console.log('Uploading to bucket: product-images');
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}.${fileExt}`;
+    const filePath = `products/${fileName}`;
+
+    const { error } = await supabase.storage
+      .from('product-images')
+      .upload(filePath, file);
+
+    if (error) {
+      console.error(error);
+      return null;
+    }
+
+    const { data } = supabase.storage
+      .from('product-images')
+      .getPublicUrl(filePath);
+
+    return data.publicUrl; // ✅ REQUIRED
+  };
+
+
+  const openProductModal = (product?: Product) => {
+    setSelectedImage(null);
+    setImagePreview(product?.image_url || '');
+
+    if (product) {
+      setEditingProduct(product);
+      setProductForm({
+        name: product.name,
+        price: product.price.toString(),
+        mrp: product.mrp?.toString() || '',
+        image_url: product.image_url,
+        stock: product.stock.toString(),
+        category: product.category || '',
+      });
+    } else {
+      setEditingProduct(null);
+      setProductForm({
+        name: '',
+        price: '',
+        mrp: '',
+        image_url: '',
+        stock: '',
+        category: '',
+      });
+    }
+
+    setShowProductModal(true);
+  };
+
+  const handleSaveProduct = async () => {
+    console.log('HANDLE SAVE PRODUCT CALLED');
+
+    try {
+      let imageUrl = productForm.image_url; // for edit without changing image
+
+      // 👇 UPLOAD IMAGE IF SELECTED
+      if (selectedImage) {
+        const uploadedUrl = await uploadImage(selectedImage);
+        if (!uploadedUrl) return;
+
+        imageUrl = uploadedUrl;
+      }
+
+      const payload = {
+        name: productForm.name,
+        price: Number(productForm.price),
+        mrp: productForm.mrp ? Number(productForm.mrp) : null,
+        stock: Number(productForm.stock),
+        category: productForm.category,
+        image_url: imageUrl, // ✅ THIS WAS MISSING
+      };
+
+      if (editingProduct) {
+        await supabase
+          .from('products')
+          .update(payload)
+          .eq('id', editingProduct.id);
+      } else {
+        await supabase
+          .from('products')
+          .insert([payload]);
+      }
+
+      setShowProductModal(false);
+      fetchProducts();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to save product');
+    }
+  };
+
+
+
 
   const fetchAllData = async () => {
     await Promise.all([
@@ -244,102 +397,102 @@ export default function AdminDashboard() {
   };
 
   // Around line 245-264
-  const openProductModal = (product?: Product) => {
-    if (product) {
-      setEditingProduct(product);
-      setProductForm({
-        name: product.name,
-        price: product.price.toString(),
-        mrp: product.mrp?.toString() || '',
-        image_url: product.image_url,
-        stock: product.stock.toString(),
-        category: product.category || '',
-      });
-    } else {
-      setEditingProduct(null);
-      setProductForm({
-        name: '',
-        price: '',
-        mrp: '',
-        image_url: '',
-        stock: '',
-        category: '',
-      });
-    }
-    setShowProductModal(true);
-  };
+  // const openProductModal = (product?: Product) => {
+  //   if (product) {
+  //     setEditingProduct(product);
+  //     setProductForm({
+  //       name: product.name,
+  //       price: product.price.toString(),
+  //       mrp: product.mrp?.toString() || '',
+  //       image_url: product.image_url,
+  //       stock: product.stock.toString(),
+  //       category: product.category || '',
+  //     });
+  //   } else {
+  //     setEditingProduct(null);
+  //     setProductForm({
+  //       name: '',
+  //       price: '',
+  //       mrp: '',
+  //       image_url: '',
+  //       stock: '',
+  //       category: '',
+  //     });
+  //   }
+  //   setShowProductModal(true);
+  // };
 
   const closeProductModal = () => {
     setShowProductModal(false);
     setEditingProduct(null);
   };
 
-  const saveProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // const saveProduct = async (e: React.FormEvent) => {
+  //   e.preventDefault();
 
-    try {
-      const productData: {
-        name: string;
-        price: number;
-        image_url: string;
-        stock: number;
-        updated_at: string;
-        mrp?: number | null;
-        category?: string;
-      } = {
-        name: productForm.name,
-        price: parseFloat(productForm.price),
-        image_url: productForm.image_url,
-        stock: parseInt(productForm.stock),
-        updated_at: new Date().toISOString(),
-      };
+  //   try {
+  //     const productData: {
+  //       name: string;
+  //       price: number;
+  //       image_url: string;
+  //       stock: number;
+  //       updated_at: string;
+  //       mrp?: number | null;
+  //       category?: string;
+  //     } = {
+  //       name: productForm.name,
+  //       price: parseFloat(productForm.price),
+  //       image_url: productForm.image_url,
+  //       stock: parseInt(productForm.stock),
+  //       updated_at: new Date().toISOString(),
+  //     };
 
-      // Include MRP if provided (only if column exists in database)
-      if (productForm.mrp && productForm.mrp.trim()) {
-        productData.mrp = parseFloat(productForm.mrp);
-      }
+  //     // Include MRP if provided (only if column exists in database)
+  //     if (productForm.mrp && productForm.mrp.trim()) {
+  //       productData.mrp = parseFloat(productForm.mrp);
+  //     }
 
-      // Include category if provided (requires migration to be run)
-      if (productForm.category.trim()) {
-        productData.category = productForm.category.trim();
-      }
+  //     // Include category if provided (requires migration to be run)
+  //     if (productForm.category.trim()) {
+  //       productData.category = productForm.category.trim();
+  //     }
 
-      if (editingProduct) {
-        const { error } = await supabase
-          .from('products')
-          .update(productData)
-          .eq('id', editingProduct.id);
+  //     if (editingProduct) {
+  //       const { error } = await supabase
+  //         .from('products')
+  //         .update(productData)
+  //         .eq('id', editingProduct.id);
 
-        if (error) {
-          console.error('Error updating product:', error);
-          alert(`Failed to update product: ${error.message}`);
-          return;
-        }
-        alert('Product updated successfully!');
-      } else {
-        const { error } = await supabase
-          .from('products')
-          .insert([productData]);
+  //       if (error) {
+  //         console.error('Error updating product:', error);
+  //         alert(`Failed to update product: ${error.message}`);
+  //         return;
+  //       }
+  //       alert('Product updated successfully!');
+  //     } else {
+  //       const { error } = await supabase
+  //         .from('products')
+  //         .insert([productData]);
 
-        if (error) {
-          console.error('Error creating product:', error);
-          alert(`Failed to create product: ${error.message}`);
-          return;
-        }
-        alert('Product created successfully!');
-      }
+  //       if (error) {
+  //         console.error('Error creating product:', error);
+  //         alert(`Failed to create product: ${error.message}`);
+  //         return;
+  //       }
+  //       alert('Product created successfully!');
+  //     }
 
-      closeProductModal();
-      await fetchProducts();
-    } catch (error) {
-      console.error('Error saving product:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      alert(`Failed to save product: ${errorMessage}`);
-    }
-  };
+  //     closeProductModal();
+  //     await fetchProducts();
+  //   } catch (error) {
+  //     console.error('Error saving product:', error);
+  //     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  //     alert(`Failed to save product: ${errorMessage}`);
+  //   }
+  // };
 
   const deleteProduct = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this product?')) return;
+    // if (!confirm('Are you sure you want to delete this product?')) return;
 
     try {
       const { error } = await supabase
@@ -642,7 +795,10 @@ export default function AdminDashboard() {
         }
       }
 
-      const customer = order.profiles;
+      const customerName = (order as Order & { customer_name?: string }).customer_name || order.profiles?.name;
+      const customerEmail = order.profiles?.email;
+      const customerPhone = (order as Order & { customer_phone?: string }).customer_phone || order.profiles?.phone;
+      const customerAddress = (order as Order & { customer_address?: string }).customer_address || order.profiles?.address;
       const w = window.open('', '_blank', 'width=900,height=700');
       if (!w) {
         alert('Popup blocked. Please allow popups to print.');
@@ -654,8 +810,8 @@ export default function AdminDashboard() {
         <tr>
           <td style="padding:8px;border-bottom:1px solid #eee;">${safe(it.products?.name || 'Unknown Product')}</td>
           <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${safe(it.quantity)}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">$${Number(it.price ?? it.products?.price ?? 0).toFixed(2)}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">$${Number(it.subtotal).toFixed(2)}</td>
+          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">₹${Number(it.price ?? it.products?.price ?? 0).toFixed(2)}</td>
+          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">₹${Number(it.subtotal).toFixed(2)}</td>
         </tr>
       `).join('');
 
@@ -681,10 +837,10 @@ export default function AdminDashboard() {
               </div>
               <div style="text-align:right;">
                 <div style="font-weight:bold;">Customer</div>
-                <div>${safe(customer?.name)}</div>
-                <div>${safe(customer?.email)}</div>
-                <div>${safe(customer?.phone)}</div>
-                <div>${safe(customer?.address)}</div>
+                <div>${safe(customerName)}</div>
+                <div>${safe(customerEmail)}</div>
+                <div>${safe(customerPhone)}</div>
+                <div>${safe(customerAddress)}</div>
               </div>
             </div>
 
@@ -703,11 +859,11 @@ export default function AdminDashboard() {
 
             <div style="margin-top:24px;display:flex;justify-content:flex-end;">
               <div style="min-width:320px;">
-                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Subtotal</span><span>$${totalAmount.toFixed(2)}</span></div>
-                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Delivery</span><span>$${delivery.toFixed(2)}</span></div>
-                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Discount</span><span>-$${discount.toFixed(2)}</span></div>
+                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Subtotal</span><span>₹${totalAmount.toFixed(2)}</span></div>
+                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Delivery</span><span>₹${delivery.toFixed(2)}</span></div>
+                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Discount</span><span>-₹${discount.toFixed(2)}</span></div>
                 <div style="display:flex;justify-content:space-between;margin:12px 0;padding-top:12px;border-top:2px solid #ddd;font-weight:bold;font-size:18px;">
-                  <span>Total</span><span>$${final.toFixed(2)}</span>
+                  <span>Total</span><span>₹${final.toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -743,13 +899,22 @@ export default function AdminDashboard() {
               <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
               <p className="text-sm text-gray-600">Welcome, {profile?.name}</p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
-            >
-              <LogOut className="h-5 w-5" />
-              <span>Logout</span>
-            </button>
+            <div className='flex space-x-2'>
+              <button
+                onClick={() => onNavigate('createOrder')}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg"
+              >
+                Create Order
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+              >
+                <LogOut className="h-5 w-5" />
+                <span>Logout</span>
+              </button>
+            </div>
+
           </div>
         </div>
       </header>
@@ -932,11 +1097,41 @@ export default function AdminDashboard() {
                   <span className="hidden sm:inline">Add Product</span>
                 </button>
               </div>
+            </div>
 
+            <div>
+              {/* Categories Section */}
+              {categories.length > 0 && (
+                <div className="w-full overflow-x-auto">
+                  <div className="flex gap-3 whitespace-nowrap px-2 py-3">
+                    <button
+                      onClick={() => setSelectedCategory(null)}
+                      className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === null
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                    >
+                      All
+                    </button>
+                    {categories.map((category) => (
+                      <button
+                        key={category}
+                        onClick={() => setSelectedCategory(category)}
+                        className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === category
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {products.map((product) => (
+              {filteredProducts.map((product) => (
                 <div
                   key={product.id}
                   className="bg-white rounded-xl shadow-md overflow-hidden"
@@ -1168,7 +1363,7 @@ export default function AdminDashboard() {
                           </div>
                           <div className="flex justify-between text-sm">
                             <span>Delivery</span>
-                            <span>₹{(order.delivery_charge || 0).toFixed(2)}</span>
+                            <span>₹{(order.delivery_charge || 20).toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-sm">
                             <span>Discount</span>
@@ -1573,21 +1768,36 @@ export default function AdminDashboard() {
               </button>
             </div>
 
-            <form onSubmit={saveProduct} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Image URL
-                </label>
+            <form className="p-6 space-y-4" onSubmit={(e) => {
+              e.preventDefault();
+              handleSaveProduct();
+            }}>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">Product Image</label>
+
                 <input
-                  type="url"
-                  value={productForm.image_url}
-                  onChange={(e) =>
-                    setProductForm({ ...productForm, image_url: e.target.value })
-                  }
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  required
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+
+                    setSelectedImage(file);
+                    setImagePreview(URL.createObjectURL(file));
+                  }}
+                  className="border p-2 rounded"
                 />
+
+                {/* Image preview */}
+                {imagePreview && (
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="h-32 w-32 object-cover rounded border"
+                  />
+                )}
               </div>
+
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthGuard } from './components/AuthGuard';
 import Home from './pages/user/Home';
@@ -7,28 +7,66 @@ import Cart from './pages/user/Cart';
 import Checkout from './pages/user/Checkout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Bills from './pages/user/Bills';
+import CreateOrder from './pages/admin/CreateOrder';
+import AdminOrderPage from './pages/admin/AdminOrderPage';
 
-type Page = 'home' | 'profile' | 'cart' | 'checkout' | 'admin' | 'bills';
+
+type Page =
+  | 'home'
+  | 'profile'
+  | 'cart'
+  | 'checkout'
+  | 'bills'
+  | 'admin'
+  | 'createOrder'
+  | 'adminOrder';
+
 
 function AppContent() {
   const { profile } = useAuth();
-  const [currentPage, setCurrentPage] = useState<Page>(
-    profile?.role === 'admin' ? 'admin' : 'home'
-  );
+  const [currentPage, setCurrentPage] = useState<Page>('home');
+  const [orderId, setOrderId] = useState<string | null>(null);
 
-  const navigate = (page: Page) => {
+  // keep page in sync with role
+  useEffect(() => {
+    if (profile?.role === 'admin') {
+      // stay on in-progress admin flows, otherwise default to dashboard
+      setCurrentPage((prev) =>
+        prev === 'createOrder' || prev === 'adminOrder' ? prev : 'admin'
+      );
+    } else {
+      setCurrentPage('home');
+      setOrderId(null);
+    }
+  }, [profile?.role]);
+
+  const navigate = (page: Page, id?: string) => {
     setCurrentPage(page);
+    if (id) setOrderId(id);
   };
 
-  
+
 
   if (profile?.role === 'admin') {
     return (
       <AuthGuard requireAdmin>
-        <AdminDashboard />
+        {currentPage === 'admin' && (
+          <AdminDashboard onNavigate={navigate} />
+        )}
+
+        {currentPage === 'createOrder' && (
+          <CreateOrder onNavigate={navigate} />
+        )}
+
+        // in the admin branch
+        {currentPage === 'adminOrder' && orderId && (
+          <AdminOrderPage orderId={orderId} onNavigate={navigate} />
+        )}
       </AuthGuard>
     );
   }
+
+
 
   return (
     <AuthGuard>

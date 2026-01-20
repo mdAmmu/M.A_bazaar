@@ -24,20 +24,6 @@ allprojects {
     }
 }
 
-// Ensure all Kotlin stdlib dependencies use a consistent version to avoid duplicate classes
-configurations.all { config ->
-    config.resolutionStrategy.eachDependency { details ->
-        if (details.requested.group == 'org.jetbrains.kotlin') {
-            // Redirect old jdk7/jdk8 artifacts to the main stdlib at a single version
-            if (details.requested.name == 'kotlin-stdlib-jdk7' ||
-                details.requested.name == 'kotlin-stdlib-jdk8') {
-                details.useTarget "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"
-                details.because 'Unify Kotlin stdlib versions and replace deprecated jdk7/jdk8 artifacts.'
-            }
-        }
-    }
-}
-
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

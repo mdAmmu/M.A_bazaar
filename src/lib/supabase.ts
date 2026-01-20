@@ -52,6 +52,9 @@ export type Order = {
   final_amount: number;
   status: string;
   created_at: string;
+  customer_name?: string;
+  customer_phone?: string;
+  customer_address?: string;
 };
 
 export type OrderItem = {
