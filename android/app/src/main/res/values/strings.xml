@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">M.A_Bazaar_apk</string>
-    <string name="title_activity_main">M.A_Bazaar_apk</string>
-    <string name="package_name">com.mabazaar.app</string>
-    <string name="custom_url_scheme">com.mabazaar.app</string>
+    <string name="app_name">M.A Bazaar</string>
+    <string name="title_activity_main">M.A Bazaar</string>
+    <string name="package_name">com.M.A_Bazaar.app</string>
+    <string name="custom_url_scheme">com.M.A_Bazaar.app</string>
 </resources>

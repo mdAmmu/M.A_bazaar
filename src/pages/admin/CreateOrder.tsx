@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { ArrowLeft } from "lucide-react";
 
 type Page =
   | "home"
@@ -18,6 +19,8 @@ interface CreateOrderProps {
 
 const CreateOrder = ({ onNavigate }: CreateOrderProps) => {
   const { profile } = useAuth();
+  const navigate = onNavigate ?? (() => {});
+
 
   const [form, setForm] = useState({
     name: "",
@@ -61,7 +64,7 @@ const CreateOrder = ({ onNavigate }: CreateOrderProps) => {
         throw error || new Error("Order not created");
       }
 
-      onNavigate("adminOrder", order.id);
+      navigate("adminOrder", order.id);
     } catch (error) {
       console.error("Error creating order:", error);
       alert("Failed to create order. Please try again.");
@@ -71,8 +74,18 @@ const CreateOrder = ({ onNavigate }: CreateOrderProps) => {
   };
 
   return (
-    <div className="max-w-md mx-auto p-4">
-      <h2 className="text-xl font-bold mb-4">Create Order</h2>
+    <div className="max-w-md mx-auto p-4  w-full">
+      <div className="flex items-start mb-5 w-full">
+      <button
+        onClick={() => navigate("admin")}
+        className="flex items-center text-gray-700 hover:text-gray-900"
+      >
+        <ArrowLeft className="h-5 w-5 mr-2" />
+        Back
+      </button>
+      
+      </div>
+      <h2 className="text-xl font-bold flex items-center mb-5">Create Order</h2>
 
       <input
         className="w-full border p-2 mb-2"
@@ -104,3 +117,5 @@ const CreateOrder = ({ onNavigate }: CreateOrderProps) => {
 };
 
 export default CreateOrder;
+
+

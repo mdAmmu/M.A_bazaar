@@ -306,10 +306,12 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
       alert('Add at least one item before generating the bill.');
       return;
     }
-
+  
     setFinalizing(true);
+  
     try {
       const { subtotal, finalAmount } = calculateAdminTotals();
+  
       const { data: updatedOrder, error } = await supabase
         .from('orders')
         .update({
@@ -320,13 +322,18 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
         .eq('id', orderId)
         .select()
         .single();
-
-      if (error || !updatedOrder) throw error || new Error('Failed to update order');
-
+  
+      if (error || !updatedOrder) {
+        throw error || new Error('Failed to update order');
+      }
+  
       setOrderDetails(updatedOrder as Order);
-      printAdminBill(updatedOrder as Order, orderItems);
+  
       alert('Order saved and bill generated');
+  
+      // ✅ Redirect AFTER successful save
       navigate('admin');
+  
     } catch (error) {
       console.error('Error finalizing admin order:', error);
       alert('Failed to finalize order');
@@ -334,7 +341,7 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
       setFinalizing(false);
     }
   };
-
+  
 
   const addVoiceItemsToCart = async (
     items: { product: Product; quantity: number }[]
@@ -487,6 +494,9 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
                 <p className="text-sm text-gray-500">Admin Order</p>
                 <p className="text-lg font-semibold text-gray-900">
                   {orderDetails?.customer_name || 'Customer'} {orderDetails?.customer_phone ? `(${orderDetails.customer_phone})` : ''}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {orderDetails?.customer_address || 'Address not provided'}
                 </p>
                 <p className="text-sm text-gray-500">Order ID: {orderId}</p>
               </div>

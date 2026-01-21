@@ -58,7 +58,7 @@ function AppContent() {
           <CreateOrder onNavigate={navigate} />
         )}
 
-        // in the admin branch
+        {/* // in the admin branch */}
         {currentPage === 'adminOrder' && orderId && (
           <AdminOrderPage orderId={orderId} onNavigate={navigate} />
         )}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Package, ShoppingCart, LogOut, Edit, Trash2, Plus, X, Users, CreditCard, BarChart3, TrendingUp, Upload, Printer } from 'lucide-react';
+import { Package, ShoppingCart, LogOut, Edit, Trash2, Plus, X, Users, CreditCard, BarChart3, TrendingUp, Upload, Printer, ReceiptText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase, Product, Order, OrderItem, Profile } from '../../lib/supabase';
 import BulkProductUpload from './BulkProductUpload';
@@ -37,7 +37,7 @@ interface MonthlySales {
   sales: number;
 }
 
-type AdminTab = 'overview' | 'products' | 'orders' | 'users' | 'payments' | 'analytics';
+type AdminTab = 'overview' | 'products' | 'orders' | 'bills' | 'users' | 'payments' | 'analytics';
 
 export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const { profile, signOut } = useAuth();
@@ -827,11 +827,11 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             <title>${billNo}</title>
             <meta charset="utf-8" />
           </head>
-          <body style="font-family: Arial, sans-serif; padding: 24px;">
+          <body style="font-family: 'Courier New', monospace; padding: 16px; max-width: 380px; margin: 0 auto; background:#fff;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;">
               <div>
-                <h1 style="margin:0;">Invoice</h1>
-                <div style="margin-top:8px;color:#555;">Bill No: <strong>${billNo}</strong></div>
+                <h1 style="margin:0;font-size:18px;">Thermal Bill</h1>
+                <div style="margin-top:8px;color:#555;">Bill: <strong>${billNo}</strong></div>
                 <div style="margin-top:4px;color:#555;">Order: ${order.id}</div>
                 <div style="margin-top:4px;color:#555;">Printed: ${new Date().toLocaleString()}</div>
               </div>
@@ -844,8 +844,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               </div>
             </div>
 
-            <h2 style="margin-top:24px;">Items</h2>
-            <table style="width:100%;border-collapse:collapse;">
+            <h2 style="margin-top:16px;font-size:16px;">Items</h2>
+            <table style="width:100%;border-collapse:collapse;font-size:14px;">
               <thead>
                 <tr>
                   <th style="text-align:left;padding:8px;border-bottom:2px solid #ddd;">Item</th>
@@ -950,6 +950,16 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           >
             <ShoppingCart className="h-4 w-4" />
             <span>Orders</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('bills')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold transition text-sm ${activeTab === 'bills'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+          >
+            <ReceiptText className="h-4 w-4" />
+            <span>Saved Bills</span>
           </button>
           <button
             onClick={() => setActiveTab('users')}
@@ -1069,6 +1079,69 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'bills' && (
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Saved Bills</h2>
+            <div className="space-y-4">
+              {orders.length === 0 ? (
+                <div className="bg-white p-12 text-center rounded-xl shadow-sm">
+                  <p className="text-gray-600">No bills generated yet.</p>
+                </div>
+              ) : (
+                orders.map((order) => {
+                  const orderProfile = order.profiles || {
+                    name: 'N/A',
+                    email: 'N/A',
+                    phone: 'N/A',
+                    address: 'N/A',
+                  };
+                  const customerName =
+                    (order as Order & { customer_name?: string }).customer_name || orderProfile.name;
+                  const customerPhone =
+                    (order as Order & { customer_phone?: string }).customer_phone || orderProfile.phone;
+                  const customerAddress =
+                    (order as Order & { customer_address?: string }).customer_address || orderProfile.address;
+                  const orderItems = order.order_items || [];
+                  const itemSummary = orderItems
+                    .map((item) => `${item.products?.name ?? 'Item'} × ${item.quantity}`)
+                    .slice(0, 3)
+                    .join(', ');
+
+                  return (
+                    <div key={order.id} className="bg-white rounded-xl shadow-md p-6">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                        <div>
+                          <p className="text-sm text-gray-500">
+                            Order {order.id.slice(0, 8)}… · {new Date(order.created_at).toLocaleString()}
+                          </p>
+                          <p className="font-semibold text-gray-900">{customerName}</p>
+                          <p className="text-sm text-gray-600">{customerPhone}</p>
+                          <p className="text-sm text-gray-600">{customerAddress || 'Address not provided'}</p>
+                          {itemSummary && (
+                            <p className="text-xs text-gray-500 mt-2">Items: {itemSummary}{orderItems.length > 3 ? '…' : ''}</p>
+                          )}
+                        </div>
+                        <div className="text-right space-y-2">
+                          <p className="text-lg font-bold text-blue-600">
+                            ₹{(order.final_amount || 0).toFixed(2)}
+                          </p>
+                          <button
+                            onClick={() => printBillForOrder(order)}
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                          >
+                            <Printer className="h-4 w-4" />
+                            <span>Print Thermal Bill</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
 
@@ -1254,12 +1327,20 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 </div>
                 <div className="space-y-4">
                   {getOrdersForDay(selectedDay).map((order) => {
-                    const profile = order.profiles || {
+                    const orderProfile = order.profiles || {
                       name: 'N/A',
                       email: 'N/A',
                       phone: 'N/A',
                       address: 'N/A',
                     };
+
+                    const customerName =
+                      (order as Order & { customer_name?: string }).customer_name || orderProfile.name;
+                    const customerPhone =
+                      (order as Order & { customer_phone?: string }).customer_phone || orderProfile.phone;
+                    const customerAddress =
+                      (order as Order & { customer_address?: string }).customer_address || orderProfile.address;
+                    const customerEmail = orderProfile.email;
 
                     const orderItems = order.order_items || [];
 
@@ -1315,8 +1396,6 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                               className="px-3 py-2 border border-gray-300 rounded-lg text-sm sm:w-auto"
                             >
                               <option value="pending">Pending</option>
-                              <option value="processing">Processing</option>
-                              <option value="shipped">Shipped</option>
                               <option value="delivered">Delivered</option>
                               <option value="cancelled">Cancelled</option>
                             </select>
@@ -1326,10 +1405,10 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
                         <div className="mb-4">
                           <h4 className="font-semibold mb-2">Customer Details</h4>
-                          <p>{profile.name}</p>
-                          <p>{profile.email}</p>
-                          <p>{profile.phone}</p>
-                          <p>{profile.address}</p>
+                          <p>{customerName}</p>
+                          <p>{customerEmail}</p>
+                          <p>{customerPhone}</p>
+                          <p>{customerAddress}</p>
                         </div>
 
                         <div className="mb-4">
