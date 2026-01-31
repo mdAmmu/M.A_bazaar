@@ -21,6 +21,7 @@ interface AdminDashboardProps {
 interface OrderWithItems extends Order {
   order_items: (OrderItem & { products: Product })[];
   profiles: { name: string; email: string; phone: string; address: string };
+  customers?: { id: string; name: string; phone: string; address: string };
 }
 
 interface DashboardStats {
@@ -37,7 +38,7 @@ interface MonthlySales {
   sales: number;
 }
 
-type AdminTab = 'overview' | 'products' | 'orders' | 'bills' | 'users' | 'payments' | 'analytics';
+type AdminTab = 'overview' | 'products' | 'orders' | 'bills' | 'users' | 'customers' | 'payments' | 'analytics';
 
 export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const { profile, signOut } = useAuth();
@@ -45,6 +46,17 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
+  const [customers, setCustomers] = useState<Array<{
+    id: string;
+    name: string;
+    phone: string;
+    address: string;
+    latitude: number | null;
+    longitude: number | null;
+    employee_id: string;
+    created_at: string;
+    profiles?: { name: string; email: string };
+  }>>([]);
   const [stats, setStats] = useState<DashboardStats>({
     totalProducts: 0,
     totalOrders: 0,
@@ -221,6 +233,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       fetchProducts(),
       fetchOrders(),
       fetchUsers(),
+      fetchCustomers(),
       calculateStats(),
       calculateMonthlySales(),
     ]);
@@ -276,6 +289,12 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             phone,
             address
           ),
+          customers (
+            id,
+            name,
+            phone,
+            address
+          ),
           order_items (
             id,
             quantity,
@@ -322,6 +341,23 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       setUsers((data as Profile[]) || []);
     } catch (error) {
       console.error('Error fetching users:', error);
+    }
+  };
+
+  const fetchCustomers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select(`
+          *,
+          profiles (name, email)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setCustomers(data || []);
+    } catch (error) {
+      console.error('Error fetching customers:', error);
     }
   };
 
@@ -795,10 +831,21 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         }
       }
 
-      const customerName = (order as Order & { customer_name?: string }).customer_name || order.profiles?.name;
+      // Check for customer from customers table (employee orders) first, then fallback to customer_name fields, then profile
+      const customerFromTable = (order as OrderWithItems).customers;
+      const customerName =
+        customerFromTable?.name ||
+        (order as Order & { customer_name?: string }).customer_name ||
+        order.profiles?.name;
       const customerEmail = order.profiles?.email;
-      const customerPhone = (order as Order & { customer_phone?: string }).customer_phone || order.profiles?.phone;
-      const customerAddress = (order as Order & { customer_address?: string }).customer_address || order.profiles?.address;
+      const customerPhone =
+        customerFromTable?.phone ||
+        (order as Order & { customer_phone?: string }).customer_phone ||
+        order.profiles?.phone;
+      const customerAddress =
+        customerFromTable?.address ||
+        (order as Order & { customer_address?: string }).customer_address ||
+        order.profiles?.address;
       const w = window.open('', '_blank', 'width=900,height=700');
       if (!w) {
         alert('Popup blocked. Please allow popups to print.');
@@ -972,6 +1019,16 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             <span>Users</span>
           </button>
           <button
+            onClick={() => setActiveTab('customers')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold transition text-sm ${activeTab === 'customers'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+          >
+            <Users className="h-4 w-4" />
+            <span>Customers</span>
+          </button>
+          <button
             onClick={() => setActiveTab('payments')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold transition text-sm ${activeTab === 'payments'
               ? 'bg-blue-600 text-white'
@@ -1098,12 +1155,20 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                     phone: 'N/A',
                     address: 'N/A',
                   };
+                  // Check for customer from customers table (employee orders) first, then fallback to customer_name fields, then profile
+                  const customerFromTable = (order as OrderWithItems).customers;
                   const customerName =
-                    (order as Order & { customer_name?: string }).customer_name || orderProfile.name;
+                    customerFromTable?.name ||
+                    (order as Order & { customer_name?: string }).customer_name ||
+                    orderProfile.name;
                   const customerPhone =
-                    (order as Order & { customer_phone?: string }).customer_phone || orderProfile.phone;
+                    customerFromTable?.phone ||
+                    (order as Order & { customer_phone?: string }).customer_phone ||
+                    orderProfile.phone;
                   const customerAddress =
-                    (order as Order & { customer_address?: string }).customer_address || orderProfile.address;
+                    customerFromTable?.address ||
+                    (order as Order & { customer_address?: string }).customer_address ||
+                    orderProfile.address;
                   const orderItems = order.order_items || [];
                   const itemSummary = orderItems
                     .map((item) => `${item.products?.name ?? 'Item'} × ${item.quantity}`)
@@ -1214,6 +1279,10 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                     <img
                       src={product.image_url}
                       alt={product.name}
+                      loading="lazy"
+                      decoding="async"
+                      width="300"
+                      height="300"
                       className="w-full h-full object-contain"
                     />
                   </div>
@@ -1334,12 +1403,20 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                       address: 'N/A',
                     };
 
+                    // Check for customer from customers table (employee orders) first, then fallback to customer_name fields, then profile
+                    const customerFromTable = (order as OrderWithItems).customers;
                     const customerName =
-                      (order as Order & { customer_name?: string }).customer_name || orderProfile.name;
+                      customerFromTable?.name ||
+                      (order as Order & { customer_name?: string }).customer_name ||
+                      orderProfile.name;
                     const customerPhone =
-                      (order as Order & { customer_phone?: string }).customer_phone || orderProfile.phone;
+                      customerFromTable?.phone ||
+                      (order as Order & { customer_phone?: string }).customer_phone ||
+                      orderProfile.phone;
                     const customerAddress =
-                      (order as Order & { customer_address?: string }).customer_address || orderProfile.address;
+                      customerFromTable?.address ||
+                      (order as Order & { customer_address?: string }).customer_address ||
+                      orderProfile.address;
                     const customerEmail = orderProfile.email;
 
                     const orderItems = order.order_items || [];
@@ -1534,6 +1611,76 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   <p className="text-gray-600">No users found</p>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'customers' && (
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Customer Management</h2>
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Customer Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Phone
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Address
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Employee
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Location
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Created
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {customers.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-12 text-center text-gray-600">
+                          No customers found
+                        </td>
+                      </tr>
+                    ) : (
+                      customers.map((customer) => (
+                        <tr key={customer.id} className="hover:bg-gray-50 transition">
+                          <td className="px-6 py-4 text-sm font-semibold text-gray-900">
+                            {customer.name}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {customer.phone}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
+                            {customer.address}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {customer.profiles?.name || 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {customer.latitude && customer.longitude ? (
+                              <span className="text-green-600">✓ Saved</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {new Date(customer.created_at).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
