@@ -560,7 +560,9 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
                   alt={product.name}
                   loading="lazy"
                   decoding="async"
-                  className="w-full h-full object-cover"
+                  width="300"
+                  height="300"
+                  className="w-full h-full object-contain"
                 />
               </div>
 

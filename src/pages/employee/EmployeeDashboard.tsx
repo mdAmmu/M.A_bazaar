@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Package, Users, ShoppingCart, MapPin, Trash2, ArrowLeft, Minus, Plus, ChevronUp, ChevronDown, Calendar, DollarSign } from "lucide-react";
+import { Package, Users, ShoppingCart, MapPin, Trash2, ArrowLeft, Minus, Plus, ChevronUp, ChevronDown, Calendar, DollarSign, Navigation, Search } from "lucide-react";
 import { supabase, Product } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 
@@ -61,6 +61,7 @@ export default function EmployeeDashboard() {
     const [addingCustomer, setAddingCustomer] = useState(false);
     const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
     const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+    const [customerSearchQuery, setCustomerSearchQuery] = useState("");
 
 
 
@@ -243,6 +244,20 @@ export default function EmployeeDashboard() {
         setTab("products");
     };
 
+    const deleteCustomer = async (customerId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!window.confirm("Are you sure you want to delete this customer?")) return;
+        try {
+            const { error } = await supabase.from("customers").delete().eq("id", customerId);
+            if (error) throw error;
+            if (activeCustomer?.id === customerId) setActiveCustomer(null);
+            await fetchCustomers();
+        } catch (err) {
+            console.error("Error deleting customer:", err);
+            alert("Failed to delete customer.");
+        }
+    };
+
     // ---------------- CART ----------------
     const addToCart = (product: Product) => {
         if (!activeCustomer) {
@@ -340,6 +355,49 @@ export default function EmployeeDashboard() {
         }
     };
 
+    // delete order button function
+    const deleteOrder = async (orderId: string) => {
+        const isConfirmed = window.confirm(
+          'Are you sure you want to delete this order? This action cannot be undone and will also delete all order items.'
+        );
+        if (!isConfirmed) return;
+    
+        try {
+          // Delete order items first (due to foreign key constraint)
+          const { error: itemsError } = await supabase
+            .from('order_items')
+            .delete()
+            .eq('order_id', orderId);
+    
+          if (itemsError) {
+            console.error('Error deleting order items:', itemsError);
+            alert(`Failed to delete order items: ${itemsError.message}`);
+            return;
+          }
+    
+          // Then delete the order
+          const { error: orderError } = await supabase
+            .from('orders')
+            .delete()
+            .eq('id', orderId);
+    
+          if (orderError) {
+            console.error('Error deleting order:', orderError);
+            alert(`Failed to delete order: ${orderError.message}`);
+            return;
+          }
+    
+          await fetchOrders();
+          await calculateStats();
+          // alert('Order deleted successfully');
+        } catch (err) {
+          console.error('Error deleting order:', err);
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          alert(`Failed to delete order: ${errorMessage}`);
+        }
+      };
+
+
     // ---------------- UI ----------------
     if (loading) {
         return (
@@ -360,7 +418,7 @@ export default function EmployeeDashboard() {
                             {profile && (
                                 <div className="text-sm text-gray-600 flex items-center gap-2">
                                     <div className="bg-green-100 text-green-800 px-3 py-1 rounded-lg font-semibold">
-                                        {activeCustomer ? activeCustomer.name : employeeId?.slice(0, 6) || profile.name}
+                                        {profile?.name}
                                     </div>
                                 </div>
                             )}
@@ -458,6 +516,10 @@ export default function EmployeeDashboard() {
                                         <img
                                             src={product.image_url}
                                             alt={product.name}
+                                            loading="lazy"
+                                            decoding="async"
+                                            width="300"
+                                            height="300"
                                             className="w-full h-full object-contain"
                                         />
                                     </div>
@@ -514,6 +576,19 @@ export default function EmployeeDashboard() {
                                     My Customers
                                 </h2>
 
+                                {customers.length > 0 && (
+                                    <div className="relative mb-4">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search by name, phone, or address..."
+                                            value={customerSearchQuery}
+                                            onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                )}
+
                                 {customers.length === 0 ? (
                                     <div className="text-center py-12">
                                         <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -522,8 +597,21 @@ export default function EmployeeDashboard() {
                                         </p>
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {customers.map((customer) => (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {(() => {
+                                            const q = customerSearchQuery.trim().toLowerCase();
+                                            const filtered = q
+                                                ? customers.filter(
+                                                    (c) =>
+                                                        c.name.toLowerCase().includes(q) ||
+                                                        c.phone.toLowerCase().includes(q) ||
+                                                        c.address.toLowerCase().includes(q)
+                                                )
+                                                : customers;
+                                            return filtered.length === 0 ? (
+                                                <p className="col-span-full text-center text-gray-500 py-6">No customers match your search.</p>
+                                            ) : (
+                                                filtered.map((customer) => (
                                             <div
                                                 key={customer.id}
                                                 onClick={() => selectCustomer(customer)}
@@ -557,17 +645,41 @@ export default function EmployeeDashboard() {
                                                     )}
                                                 </div>
 
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        selectCustomer(customer);
-                                                    }}
-                                                    className="mt-3 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition text-sm font-semibold"
-                                                >
-                                                    Select Customer
-                                                </button>
+                                                <div className="mt-3 flex gap-2">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            selectCustomer(customer);
+                                                        }}
+                                                        className="flex-auto bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition text-sm font-semibold"
+                                                    >
+                                                        Select Customer
+                                                    </button>
+                                                    {customer.latitude != null && customer.longitude != null && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const url = `https://www.google.com/maps?q=${customer.latitude},${customer.longitude}`;
+                                                                window.open(url, "_blank", "noopener,noreferrer");
+                                                            }}
+                                                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition text-sm font-medium"
+                                                            title="Open location in Google Maps"
+                                                        >
+                                                            <Navigation className="h-4 w-4" />
+                                                            Locate
+                                                        </button>
+                                                    )}
+                                                    {/* <button
+                                                        onClick={(e) => deleteCustomer(customer.id, e)}
+                                                        className="flex items-center justify-center p-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition"
+                                                        title="Delete customer"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button> */}
+                                                </div>
                                             </div>
-                                        ))}
+                                                )));
+                                        })()}
                                     </div>
                                 )}
                             </div>
@@ -924,6 +1036,7 @@ export default function EmployeeDashboard() {
                                                     </div>
 
                                                     {/* Total */}
+                                                    <div className="space-y-1 text-sm w-fit">
                                                         <div className="flex justify-between">
                                                             <span>Subtotal</span>
                                                             <span>₹{(order.total_amount ?? 0).toFixed(2)}</span>

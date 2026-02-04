@@ -1,8 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Package, ShoppingCart, LogOut, Edit, Trash2, Plus, X, Users, CreditCard, BarChart3, TrendingUp, Upload, Printer, ReceiptText } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { useAuth } from '../../context/AuthContext';
 import { supabase, Product, Order, OrderItem, Profile } from '../../lib/supabase';
 import BulkProductUpload from './BulkProductUpload';
+
+// Thermal receipt size: 80mm width (standard for thermal printers)
+const THERMAL_PDF_WIDTH_MM = 80;
+const THERMAL_PDF_MAX_HEIGHT_MM = 400;
+const THERMAL_MARGIN_MM = 3;
+const THERMAL_CONTENT_WIDTH_MM = THERMAL_PDF_WIDTH_MM - THERMAL_MARGIN_MM * 2;
 
 type Page =
   | 'home'
@@ -33,8 +40,8 @@ interface DashboardStats {
   pendingOrders: number;
 }
 
-interface MonthlySales {
-  month: string;
+interface DailySales {
+  date: string;
   sales: number;
 }
 
@@ -65,7 +72,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     totalUsers: 0,
     pendingOrders: 0,
   });
-  const [monthlySales, setMonthlySales] = useState<MonthlySales[]>([]);
+  const [dailySales, setDailySales] = useState<DailySales[]>([]);
   const [loading, setLoading] = useState(true);
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -96,6 +103,13 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     fetchAllData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Refetch customers when switching to Customers tab so new customers added by employees appear
+  useEffect(() => {
+    if (activeTab === 'customers') {
+      fetchCustomers();
+    }
+  }, [activeTab]);
 
   // to filter the product by category
 
@@ -235,7 +249,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       fetchUsers(),
       fetchCustomers(),
       calculateStats(),
-      calculateMonthlySales(),
+      calculateDailySales(),
     ]);
     setLoading(false);
   };
@@ -346,20 +360,73 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
   const fetchCustomers = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch customers without join so RLS only applies to customers table (admin can see all)
+      const { data: customerRows, error: customerError } = await supabase
         .from('customers')
-        .select(`
-          *,
-          profiles (name, email)
-        `)
+        .select('id, name, phone, address, latitude, longitude, employee_id, created_at')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setCustomers(data || []);
+      if (customerError) {
+        console.error('Error fetching customers:', customerError);
+        setCustomers([]);
+        return;
+      }
+
+      if (!customerRows || customerRows.length === 0) {
+        setCustomers([]);
+        return;
+      }
+
+      type CustomerRow = { id: string; name: string; phone: string; address: string; latitude: number | null; longitude: number | null; employee_id: string; created_at: string };
+      const rows = customerRows as CustomerRow[];
+
+      // Get unique employee IDs and fetch their profile names
+      const employeeIds = [...new Set(rows.map((c) => c.employee_id).filter(Boolean))];
+      let profileMap: Record<string, { name: string; email: string }> = {};
+      if (employeeIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, name, email')
+          .in('id', employeeIds);
+        if (profilesData) {
+          profileMap = profilesData.reduce((acc, p) => {
+            acc[p.id] = { name: p.name ?? '', email: p.email ?? '' };
+            return acc;
+          }, {} as Record<string, { name: string; email: string }>);
+        }
+      }
+
+      const merged = rows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        address: c.address,
+        latitude: c.latitude ?? null,
+        longitude: c.longitude ?? null,
+        employee_id: c.employee_id,
+        created_at: c.created_at,
+        profiles: profileMap[c.employee_id],
+      }));
+      setCustomers(merged);
     } catch (error) {
       console.error('Error fetching customers:', error);
+      setCustomers([]);
     }
   };
+
+  const deleteCustomer = async (customerId: string) => {
+    if (!window.confirm('Are you sure you want to delete this customer?')) return;
+    try {
+      const { error } = await supabase.from('customers').delete().eq('id', customerId);
+      if (error) throw error;
+      await fetchCustomers();
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      alert('Failed to delete customer.');
+    }
+  };
+  
+  
 
   const calculateStats = async () => {
     try {
@@ -400,7 +467,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
   };
 
-  const calculateMonthlySales = async () => {
+  const calculateDailySales = async () => {
     try {
       const { data, error } = await supabase
         .from('orders')
@@ -409,26 +476,27 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       if (error) throw error;
 
-      const monthlyData: Record<string, number> = {};
+      const dailyData: Record<string, number> = {};
       if (data) {
         data.forEach((order) => {
           const date = new Date(order.created_at);
-          const monthKey = date.toLocaleString('default', {
+          const dateKey = date.toLocaleDateString(undefined, {
+            day: 'numeric',
             month: 'short',
             year: 'numeric',
           });
-          monthlyData[monthKey] = (monthlyData[monthKey] || 0) + order.final_amount;
+          dailyData[dateKey] = (dailyData[dateKey] || 0) + (order.final_amount ?? 0);
         });
       }
 
-      const monthlyArray = Object.entries(monthlyData).map(([month, sales]) => ({
-        month,
+      const dailyArray = Object.entries(dailyData).map(([date, sales]) => ({
+        date,
         sales: Math.round(sales * 100) / 100,
       }));
 
-      setMonthlySales(monthlyArray.slice(-12));
+      setDailySales(dailyArray.slice(-30));
     } catch (error) {
-      console.error('Error calculating monthly sales:', error);
+      console.error('Error calculating daily sales:', error);
     }
   };
 
@@ -774,7 +842,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       await Promise.all([
         fetchOrders(),
         calculateStats(),
-        calculateMonthlySales(),
+        calculateDailySales(),
       ]);
       setLoading(false);
 
@@ -791,6 +859,139 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     const d = String(now.getDate()).padStart(2, '0');
     const t = String(now.getTime()).slice(-6);
     return `INV-${y}${m}${d}-${t}`;
+  };
+
+  /** Build and save bill as thermal-size PDF (80mm width) for printing/saving to device */
+  const saveBillAsThermalPdf = (order: OrderWithItems, billNo: string) => {
+    const safe = (v: unknown) => String(v ?? '').trim();
+    // jsPDF built-in fonts don't reliably render the ₹ symbol on all devices.
+    // Use "Rs." so money amounts display correctly everywhere.
+    const money = (value: unknown, opts?: { negative?: boolean }) => {
+      const n = Number(value ?? 0);
+      const abs = Math.abs(Number.isFinite(n) ? n : 0);
+      const prefix = opts?.negative ? '-' : '';
+      return `${prefix}Rs. ${abs.toFixed(2)}`;
+    };
+    const customerFromTable = (order as OrderWithItems).customers;
+    const customerName =
+      customerFromTable?.name ||
+      (order as Order & { customer_name?: string }).customer_name ||
+      order.profiles?.name ||
+      '';
+    const customerPhone =
+      customerFromTable?.phone ||
+      (order as Order & { customer_phone?: string }).customer_phone ||
+      order.profiles?.phone ||
+      '';
+    const customerAddress =
+      customerFromTable?.address ||
+      (order as Order & { customer_address?: string }).customer_address ||
+      order.profiles?.address ||
+      '';
+
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: [THERMAL_PDF_WIDTH_MM, THERMAL_PDF_MAX_HEIGHT_MM],
+      hotfixes: ['pxToMm'],
+    });
+
+    const margin = THERMAL_MARGIN_MM;
+    const w = THERMAL_CONTENT_WIDTH_MM;
+    let y = margin;
+    const lineHeight = 4;
+    const fontSmall = 7;
+    const fontNormal = 8;
+    const fontTitle = 10;
+
+    doc.setFontSize(fontTitle);
+    doc.text('THERMAL BILL', margin, y);
+    y += lineHeight + 2;
+
+    doc.setFontSize(fontSmall);
+    doc.text(`Bill: ${billNo}`, margin, y);
+    y += lineHeight;
+    doc.text(`Order: ${order.id.slice(0, 8)}...`, margin, y);
+    y += lineHeight;
+    doc.text(`Date: ${new Date().toLocaleString()}`, margin, y);
+    y += lineHeight + 2;
+
+    doc.setFontSize(fontNormal);
+    doc.text('Customer', margin, y);
+    y += lineHeight;
+    doc.setFontSize(fontSmall);
+    doc.text(safe(customerName), margin, y);
+    y += lineHeight;
+    doc.text(safe(customerPhone), margin, y);
+    y += lineHeight;
+    const addrLines = doc.splitTextToSize(safe(customerAddress) || '-', w);
+    for (const line of addrLines) {
+      doc.text(String(line), margin, y);
+      y += lineHeight;
+    }
+    y += 2;
+
+    doc.setFontSize(fontNormal);
+    doc.text('Items', margin, y);
+    y += lineHeight;
+
+    const colW = [w * 0.4, w * 0.15, w * 0.2, w * 0.25];
+    doc.setFontSize(fontSmall);
+    doc.text('Item', margin, y);
+    doc.text('Qty', margin + colW[0], y);
+    doc.text('Price', margin + colW[0] + colW[1], y);
+    doc.text('Subtotal', margin + colW[0] + colW[1] + colW[2], y);
+    y += lineHeight;
+    doc.setDrawColor(0, 0, 0);
+    doc.line(margin, y, margin + w, y);
+    y += lineHeight;
+
+    for (const it of order.order_items || []) {
+      const name = safe(it.products?.name || 'Unknown');
+      const nameLines = doc.splitTextToSize(name, colW[0]);
+      const qty = safe(it.quantity);
+      const price = money(it.price ?? it.products?.price ?? 0);
+      const subtotal = money(it.subtotal ?? 0);
+      doc.text(nameLines[0] || name, margin, y);
+      // Right-align numeric columns so they don't overlap or wrap
+      doc.text(qty, margin + colW[0] + colW[1] - 1, y, { align: 'right' });
+      doc.text(price, margin + colW[0] + colW[1] + colW[2] - 1, y, { align: 'right' });
+      doc.text(subtotal, margin + w, y, { align: 'right' });
+      y += lineHeight;
+      for (let i = 1; i < nameLines.length; i++) {
+        doc.text(nameLines[i], margin, y);
+        y += lineHeight;
+      }
+    }
+    y += 2;
+
+    const totalAmount = Number(order.total_amount || 0);
+    const delivery = Number((order as Order & { delivery_charge?: number }).delivery_charge ?? 0);
+    const discount = Number(order.discount || 0);
+    const final = Number(order.final_amount || 0);
+
+    doc.text('Subtotal:', margin, y);
+    doc.text(money(totalAmount), margin + w, y, { align: 'right' });
+    y += lineHeight;
+    doc.text('Delivery:', margin, y);
+    doc.text(money(delivery), margin + w, y, { align: 'right' });
+    y += lineHeight;
+    doc.text('Discount:', margin, y);
+    doc.text(money(discount, { negative: discount > 0 }), margin + w, y, { align: 'right' });
+    y += lineHeight + 1;
+    doc.setFontSize(fontNormal);
+    doc.setDrawColor(0, 0, 0);
+    doc.line(margin, y, margin + w, y);
+    y += lineHeight;
+    doc.setFontSize(fontTitle);
+    doc.text('Total:', margin, y);
+    doc.text(money(final), margin + w, y, { align: 'right' });
+    y += lineHeight + 4;
+    doc.setFontSize(fontSmall);
+    doc.text('Thank you!', margin, y);
+
+    const filename = `Bill_${billNo.replace(/\s/g, '_')}.pdf`;
+    doc.save(filename);
   };
 
   const printBillForOrder = async (order: OrderWithItems) => {
@@ -831,95 +1032,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         }
       }
 
-      // Check for customer from customers table (employee orders) first, then fallback to customer_name fields, then profile
-      const customerFromTable = (order as OrderWithItems).customers;
-      const customerName =
-        customerFromTable?.name ||
-        (order as Order & { customer_name?: string }).customer_name ||
-        order.profiles?.name;
-      const customerEmail = order.profiles?.email;
-      const customerPhone =
-        customerFromTable?.phone ||
-        (order as Order & { customer_phone?: string }).customer_phone ||
-        order.profiles?.phone;
-      const customerAddress =
-        customerFromTable?.address ||
-        (order as Order & { customer_address?: string }).customer_address ||
-        order.profiles?.address;
-      const w = window.open('', '_blank', 'width=900,height=700');
-      if (!w) {
-        alert('Popup blocked. Please allow popups to print.');
-        return;
-      }
-
-      const safe = (v: unknown) => String(v ?? '');
-      const rows = order.order_items.map((it) => `
-        <tr>
-          <td style="padding:8px;border-bottom:1px solid #eee;">${safe(it.products?.name || 'Unknown Product')}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${safe(it.quantity)}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">₹${Number(it.price ?? it.products?.price ?? 0).toFixed(2)}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">₹${Number(it.subtotal).toFixed(2)}</td>
-        </tr>
-      `).join('');
-
-      const totalAmount = Number(order.total_amount || 0);
-      const delivery = Number(order.delivery_charge || 0);
-      const discount = Number(order.discount || 0);
-      const final = Number(order.final_amount || 0);
       const billNo = generateBillNumber();
-
-      w.document.write(`
-        <html>
-          <head>
-            <title>${billNo}</title>
-            <meta charset="utf-8" />
-          </head>
-          <body style="font-family: 'Courier New', monospace; padding: 16px; max-width: 380px; margin: 0 auto; background:#fff;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-              <div>
-                <h1 style="margin:0;font-size:18px;">Thermal Bill</h1>
-                <div style="margin-top:8px;color:#555;">Bill: <strong>${billNo}</strong></div>
-                <div style="margin-top:4px;color:#555;">Order: ${order.id}</div>
-                <div style="margin-top:4px;color:#555;">Printed: ${new Date().toLocaleString()}</div>
-              </div>
-              <div style="text-align:right;">
-                <div style="font-weight:bold;">Customer</div>
-                <div>${safe(customerName)}</div>
-                <div>${safe(customerEmail)}</div>
-                <div>${safe(customerPhone)}</div>
-                <div>${safe(customerAddress)}</div>
-              </div>
-            </div>
-
-            <h2 style="margin-top:16px;font-size:16px;">Items</h2>
-            <table style="width:100%;border-collapse:collapse;font-size:14px;">
-              <thead>
-                <tr>
-                  <th style="text-align:left;padding:8px;border-bottom:2px solid #ddd;">Item</th>
-                  <th style="text-align:right;padding:8px;border-bottom:2px solid #ddd;">Qty</th>
-                  <th style="text-align:right;padding:8px;border-bottom:2px solid #ddd;">Price</th>
-                  <th style="text-align:right;padding:8px;border-bottom:2px solid #ddd;">Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-
-            <div style="margin-top:24px;display:flex;justify-content:flex-end;">
-              <div style="min-width:320px;">
-                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Subtotal</span><span>₹${totalAmount.toFixed(2)}</span></div>
-                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Delivery</span><span>₹${delivery.toFixed(2)}</span></div>
-                <div style="display:flex;justify-content:space-between;margin:6px 0;"><span>Discount</span><span>-₹${discount.toFixed(2)}</span></div>
-                <div style="display:flex;justify-content:space-between;margin:12px 0;padding-top:12px;border-top:2px solid #ddd;font-weight:bold;font-size:18px;">
-                  <span>Total</span><span>₹${final.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-          </body>
-        </html>
-      `);
-      w.document.close();
-      w.focus();
-      w.print();
+      saveBillAsThermalPdf(order, billNo);
     } catch (error) {
       console.error('Error printing bill:', error);
       alert('Failed to print bill');
@@ -1195,10 +1309,11 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           </p>
                           <button
                             onClick={() => printBillForOrder(order)}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                            disabled={printingOrderId === order.id}
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
                           >
                             <Printer className="h-4 w-4" />
-                            <span>Print Thermal Bill</span>
+                            <span>{printingOrderId === order.id ? 'Saving...' : 'Save as PDF'}</span>
                           </button>
                         </div>
                       </div>
@@ -1641,12 +1756,15 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                       <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
                         Created
                       </th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {customers.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center text-gray-600">
+                        <td colSpan={7} className="px-6 py-12 text-center text-gray-600">
                           No customers found
                         </td>
                       </tr>
@@ -1675,6 +1793,16 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           <td className="px-6 py-4 text-sm text-gray-600">
                             {new Date(customer.created_at).toLocaleDateString()}
                           </td>
+                          <td className="px-6 py-4 text-sm text-right">
+                            <button
+                              onClick={() => deleteCustomer(customer.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-red-600 hover:bg-red-50 transition"
+                              title="Delete customer"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </button>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -1696,14 +1824,15 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             ) : (
               <div className="space-y-4">
                 {orders.map((order) => {
-                  const profile = order.profiles || { name: 'N/A', email: 'N/A' };
+                  const customer = order.customers || { name: 'N/A', phone: 'N/A', address: 'N/A' };
 
                   return (
                     <div key={order.id} className="bg-white p-6 rounded-xl shadow-md">
                       <div className="flex justify-between">
                         <div>
-                          <p>{profile.name}</p>
-                          <p className="text-sm text-gray-600">{profile.email}</p>
+                          <p>{customer.name}</p>
+                          <p className="text-sm text-gray-600">{customer.phone}</p>
+                          <p className="text-sm text-gray-600">{customer.address}</p>
                           <p className="text-xs text-gray-500">
                             {new Date(order.created_at).toLocaleString()}
                           </p>
@@ -1738,24 +1867,24 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white rounded-xl shadow-md p-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-6">
-                  Monthly Revenue
+                  Daily Revenue
                 </h3>
                 <div className="space-y-4">
-                  {monthlySales.length > 0 ? (
-                    monthlySales.map((month) => {
+                  {dailySales.length > 0 ? (
+                    dailySales.map((day) => {
                       const maxSales = Math.max(
-                        ...monthlySales.map((m) => m.sales)
+                        ...dailySales.map((d) => d.sales)
                       );
-                      const percentage = (month.sales / maxSales) * 100;
+                      const percentage = maxSales > 0 ? (day.sales / maxSales) * 100 : 0;
 
                       return (
-                        <div key={month.month}>
+                        <div key={day.date}>
                           <div className="flex justify-between mb-2">
                             <span className="text-sm font-medium text-gray-900">
-                              {month.month}
+                              {day.date}
                             </span>
                             <span className="text-sm font-bold text-blue-600">
-                              ₹{month.sales.toFixed(2)}
+                              ₹{day.sales.toFixed(2)}
                             </span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-2">
