@@ -48,6 +48,8 @@ export default function BulkProductUpload({
         const stock = normalized.stock ?? normalized.stocks ?? normalized['stock_'];
         const category = normalized.category;
         const image_url = normalized.image_url;
+        const item_id_raw =
+          normalized.item_id ?? normalized['item id'] ?? normalized.itemid;
   
         // Skip completely empty rows
         if (!name && !price && !mrp && !stock) return [];
@@ -63,7 +65,15 @@ export default function BulkProductUpload({
           return [];
         }
   
-        const product = {
+        const product: {
+          name: string;
+          price: number;
+          mrp: number;
+          stock: number;
+          category: string | null;
+          image_url: string | null;
+          item_id?: number;
+        } = {
           name: String(name).trim(),
           price: Number(price),
           mrp: Number(mrp),
@@ -71,6 +81,16 @@ export default function BulkProductUpload({
           category: category ? String(category).trim() : null,
           image_url: image_url ? String(image_url).trim() : null,
         };
+
+        // Optional manual Item ID
+        if (item_id_raw !== undefined && String(item_id_raw).trim() !== '') {
+          const parsedItemId = Number(item_id_raw);
+          if (!Number.isNaN(parsedItemId) && parsedItemId > 0) {
+            product.item_id = parsedItemId;
+          } else {
+            console.warn(`Row ${index + 2}: invalid item_id, ignoring`);
+          }
+        }
   
         // Numeric validation
         if (
@@ -149,7 +169,7 @@ export default function BulkProductUpload({
           <br />
           <strong>Required:</strong> name, price, mrp, stock
           <br />
-          <strong>Optional:</strong> category, image_url
+          <strong>Optional:</strong> item_id, category, image_url
         </p>
 
         <label className="block">

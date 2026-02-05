@@ -62,11 +62,14 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
 
     // Apply search filter
     if (searchQuery.trim()) {
-      filtered = filtered.filter(
-        (product) =>
-          product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          product.description.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+      const q = searchQuery.trim();
+      const numericQ = q.replace(/[^\d]/g, '');
+      filtered = filtered.filter((product) => {
+        const no = product.product_no;
+        if (no === undefined || no === null) return false;
+        // Search only by numeric Product ID (allow partial match)
+        return String(no).includes(numericQ);
+      });
     }
 
     setFilteredProducts(filtered);
@@ -445,7 +448,7 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search products..."
+              placeholder="Search by Product ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
@@ -568,7 +571,14 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
 
               <div className="p-4">
                 {/* Product Name */}
-                <h3 className="font-semibold text-gray-900 mb-2">{product.name}</h3>
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <h3 className="font-semibold text-gray-900">{product.name}</h3>
+                  {product.product_no !== undefined && product.product_no !== null && (
+                    <span className="shrink-0 text-xs font-semibold px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                      ID: {product.product_no}
+                    </span>
+                  )}
+                </div>
 
                 {/* Price and MRP Row */}
                 <div className="flex items-center justify-between mb-2">

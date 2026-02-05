@@ -22,6 +22,8 @@ export type Profile = {
 
 export type Product = {
   id: string;
+  product_no?: number;
+  item_id?: number;
   name: string;
   description: string;
   price: number;

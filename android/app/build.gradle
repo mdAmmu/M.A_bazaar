@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.M.A_Bazaar.app"
+    namespace "popatiya.mabazaar.com"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.M.A_Bazaar.app"
+        applicationId "popatiya.mabazaar.com"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

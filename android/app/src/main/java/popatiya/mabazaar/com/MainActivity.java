@@ -1,4 +1,4 @@
-package com.M.A_Bazaar.app;
+package popatiya.mabazaar.com;
 
 import com.getcapacitor.BridgeActivity;
 

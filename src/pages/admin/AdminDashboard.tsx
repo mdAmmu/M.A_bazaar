@@ -83,6 +83,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     image_url: '',
     stock: '',
     category: '',
+    item_id: '',
   });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [showEditOrderModal, setShowEditOrderModal] = useState(false);
@@ -181,6 +182,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         image_url: product.image_url,
         stock: product.stock.toString(),
         category: product.category || '',
+        item_id: product.item_id?.toString() || '',
       });
     } else {
       setEditingProduct(null);
@@ -191,6 +193,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         image_url: '',
         stock: '',
         category: '',
+        item_id: '',
       });
     }
 
@@ -202,6 +205,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
     try {
       let imageUrl = productForm.image_url; // for edit without changing image
+      let itemIdToUse: number | undefined;
 
       // 👇 UPLOAD IMAGE IF SELECTED
       if (selectedImage) {
@@ -211,7 +215,35 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         imageUrl = uploadedUrl;
       }
 
-      const payload = {
+      // Decide item_id:
+      // - If user typed one, use it
+      // - If creating and left empty, auto-assign max(item_id) + 1
+      if (productForm.item_id && productForm.item_id.trim() !== '') {
+        itemIdToUse = Number(productForm.item_id);
+      } else if (!editingProduct) {
+        const { data: maxRows, error: maxError } = await supabase
+          .from('products')
+          .select('item_id')
+          .order('item_id', { ascending: false })
+          .limit(1);
+
+        if (maxError) {
+          console.error('Error fetching max item_id:', maxError);
+        }
+
+        const currentMax = (maxRows && maxRows[0]?.item_id) || 0;
+        itemIdToUse = Number(currentMax) + 1;
+      }
+
+      const payload: {
+        name: string;
+        price: number;
+        mrp: number | null;
+        stock: number;
+        category: string;
+        image_url: string;
+        item_id?: number;
+      } = {
         name: productForm.name,
         price: Number(productForm.price),
         mrp: productForm.mrp ? Number(productForm.mrp) : null,
@@ -219,6 +251,10 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         category: productForm.category,
         image_url: imageUrl, // ✅ THIS WAS MISSING
       };
+
+      if (itemIdToUse !== undefined && !Number.isNaN(itemIdToUse)) {
+        payload.item_id = itemIdToUse;
+      }
 
       if (editingProduct) {
         await supabase
@@ -425,8 +461,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       alert('Failed to delete customer.');
     }
   };
-  
-  
+
+
 
   const calculateStats = async () => {
     try {
@@ -1057,10 +1093,10 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
+              <h1 className="text-xl font-bold text-gray-900">Admin Dashboard</h1>
               <p className="text-sm text-gray-600">Welcome, {profile?.name}</p>
             </div>
-            <div className='flex space-x-2'>
+            <div className='flex space-x-2 md:text-sm text-xs'>
               <button
                 onClick={() => onNavigate('createOrder')}
                 className="bg-green-600 text-white px-4 py-2 rounded-lg"
@@ -1179,6 +1215,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 </div>
               </div>
 
+
+
               <div className="bg-white rounded-xl shadow-md p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1265,7 +1303,6 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 orders.map((order) => {
                   const orderProfile = order.profiles || {
                     name: 'N/A',
-                    email: 'N/A',
                     phone: 'N/A',
                     address: 'N/A',
                   };
@@ -1499,7 +1536,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             ) : (
               <div>
                 <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-semibold text-gray-900">
+                  <h3 className="text-md font-semibold text-gray-900">
                     Orders for {selectedDay}
                   </h3>
                   <button
@@ -1513,7 +1550,6 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   {getOrdersForDay(selectedDay).map((order) => {
                     const orderProfile = order.profiles || {
                       name: 'N/A',
-                      email: 'N/A',
                       phone: 'N/A',
                       address: 'N/A',
                     };
@@ -1824,15 +1860,41 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             ) : (
               <div className="space-y-4">
                 {orders.map((order) => {
-                  const customer = order.customers || { name: 'N/A', phone: 'N/A', address: 'N/A' };
+                  // 🔹 profile fallback (user orders)
+                  const orderProfile = order.profiles || {
+                    name: 'N/A',
+                    phone: 'N/A',
+                    address: 'N/A',
+                  };
+
+                  // 🔹 customers table (employee/admin orders)
+                  const customerFromTable = (order as OrderWithItems).customers;
+
+                  // 🔹 unified resolution logic (SAME AS BILL SECTION)
+                  const customerName =
+                    customerFromTable?.name ||
+                    (order as Order & { customer_name?: string }).customer_name ||
+                    orderProfile.name;
+
+                  const customerPhone =
+                    customerFromTable?.phone ||
+                    (order as Order & { customer_phone?: string }).customer_phone ||
+                    orderProfile.phone;
+
+                  const customerAddress =
+                    customerFromTable?.address ||
+                    (order as Order & { customer_address?: string }).customer_address ||
+                    orderProfile.address;
 
                   return (
                     <div key={order.id} className="bg-white p-6 rounded-xl shadow-md">
                       <div className="flex justify-between">
                         <div>
-                          <p>{customer.name}</p>
-                          <p className="text-sm text-gray-600">{customer.phone}</p>
-                          <p className="text-sm text-gray-600">{customer.address}</p>
+                          <p className="font-semibold">{customerName}</p>
+                          <p className="text-sm text-gray-600">{customerPhone}</p>
+                          <p className="text-sm text-gray-600 break-all">
+                            {customerAddress || 'Address not provided'}
+                          </p>
                           <p className="text-xs text-gray-500">
                             {new Date(order.created_at).toLocaleString()}
                           </p>
@@ -1840,7 +1902,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
                         <div className="text-right">
                           <p className="text-2xl font-bold text-blue-600">
-                            ₹{(order.final_amount || 0)}
+                            ₹{order.final_amount || 0}
                           </p>
                           <span className="text-xs font-semibold px-3 py-1 rounded-full bg-gray-100">
                             {order.status}
@@ -1859,6 +1921,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               </div>
             )}
           </div>
+
         )}
 
 
@@ -2199,6 +2262,25 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                   placeholder="Optional"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Item ID (optional)
+                </label>
+                <input
+                  type="number"
+                  value={productForm.item_id}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, item_id: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  placeholder="Leave empty to auto-generate"
+                  min={1}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Use this to set a specific numeric Item ID; otherwise it will be assigned automatically.
+                </p>
               </div>
 
               <div>

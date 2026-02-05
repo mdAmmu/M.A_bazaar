@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
-    "@capacitor/android": "^8.0.1",
+    "@capacitor/android": "^8.0.2",
     "@supabase/supabase-js": "^2.57.4",
     "jspdf": "^4.1.0",
     "lucide-react": "^0.344.0",
@@ -19,11 +19,12 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.12.0",
+    "tailwind-scrollbar-hide": "^4.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.5",
-    "@capacitor/core": "^8.0.1",
+    "@capacitor/core": "^8.0.2",
     "@eslint/js": "^9.9.1",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",

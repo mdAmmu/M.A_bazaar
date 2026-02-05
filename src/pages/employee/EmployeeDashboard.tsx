@@ -62,8 +62,53 @@ export default function EmployeeDashboard() {
     const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
     const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
     const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+    const [productSearchQuery, setProductSearchQuery] = useState("");
+    const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+    const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+    const [categories, setCategories] = useState<string[]>([]);
 
 
+    // ---------------- CATEGORIES ----------------
+    useEffect(() => {
+        const categories = Array.from(
+            new Set(products.map((p) => p.category).filter((c): c is string => Boolean(c)))
+          ).sort();
+          setCategories(categories);
+    }, [products]);
+
+    useEffect(() => {
+        let filtered = products;
+      
+        // ✅ Category filter
+        if (selectedCategory) {
+          filtered = filtered.filter(
+            (p) =>
+              p.category?.toLowerCase() === selectedCategory.toLowerCase()
+          );
+        }
+      
+        // ✅ Search (Item ID OR Name)
+        const raw = productSearchQuery.trim().toLowerCase();
+        if (raw) {
+          const numericQ = raw.replace(/[^\d]/g, "");
+          const targetId = numericQ ? parseInt(numericQ, 10) : NaN;
+      
+          filtered = filtered.filter((p) => {
+            const matchesName =
+              p.name?.toLowerCase().includes(raw);
+      
+            const matchesId =
+              !Number.isNaN(targetId) &&
+              p.item_id !== undefined &&
+              p.item_id === targetId;
+      
+            return matchesName || matchesId;
+          });
+        }
+      
+        setFilteredProducts(filtered);
+      }, [products, selectedCategory, productSearchQuery]);
+        
 
     // ---------------- AUTH ----------------
     useEffect(() => {
@@ -358,44 +403,44 @@ export default function EmployeeDashboard() {
     // delete order button function
     const deleteOrder = async (orderId: string) => {
         const isConfirmed = window.confirm(
-          'Are you sure you want to delete this order? This action cannot be undone and will also delete all order items.'
+            'Are you sure you want to delete this order? This action cannot be undone and will also delete all order items.'
         );
         if (!isConfirmed) return;
-    
+
         try {
-          // Delete order items first (due to foreign key constraint)
-          const { error: itemsError } = await supabase
-            .from('order_items')
-            .delete()
-            .eq('order_id', orderId);
-    
-          if (itemsError) {
-            console.error('Error deleting order items:', itemsError);
-            alert(`Failed to delete order items: ${itemsError.message}`);
-            return;
-          }
-    
-          // Then delete the order
-          const { error: orderError } = await supabase
-            .from('orders')
-            .delete()
-            .eq('id', orderId);
-    
-          if (orderError) {
-            console.error('Error deleting order:', orderError);
-            alert(`Failed to delete order: ${orderError.message}`);
-            return;
-          }
-    
-          await fetchOrders();
-          await calculateStats();
-          // alert('Order deleted successfully');
+            // Delete order items first (due to foreign key constraint)
+            const { error: itemsError } = await supabase
+                .from('order_items')
+                .delete()
+                .eq('order_id', orderId);
+
+            if (itemsError) {
+                console.error('Error deleting order items:', itemsError);
+                alert(`Failed to delete order items: ${itemsError.message}`);
+                return;
+            }
+
+            // Then delete the order
+            const { error: orderError } = await supabase
+                .from('orders')
+                .delete()
+                .eq('id', orderId);
+
+            if (orderError) {
+                console.error('Error deleting order:', orderError);
+                alert(`Failed to delete order: ${orderError.message}`);
+                return;
+            }
+
+            await fetchOrders();
+            await calculateStats();
+            // alert('Order deleted successfully');
         } catch (err) {
-          console.error('Error deleting order:', err);
-          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-          alert(`Failed to delete order: ${errorMessage}`);
+            console.error('Error deleting order:', err);
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            alert(`Failed to delete order: ${errorMessage}`);
         }
-      };
+    };
 
 
     // ---------------- UI ----------------
@@ -408,12 +453,12 @@ export default function EmployeeDashboard() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-50 ">
             {/* Header */}
-            <div className="bg-white shadow-md">
+            <div className="bg-white shadow-md sticky top-0 z-50">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                     <div className="flex justify-between items-center">
-                        <h1 className="text-2xl font-bold text-gray-900">Employee Dashboard</h1>
+                        <h1 className="text-xl font-bold text-gray-900">Employee Dashboard</h1>
                         <div className="flex items-center gap-4">
                             {profile && (
                                 <div className="text-sm text-gray-600 flex items-center gap-2">
@@ -442,7 +487,7 @@ export default function EmployeeDashboard() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                 {/* Tabs */}
                 <div className="bg-white rounded-xl shadow-md mb-6">
-                    <div className="flex border-b border-gray-200">
+                    <div className="flex overflow-x-auto whitespace-nowrap border-b border-gray-200 scrollbar-hide">
                         <button
                             onClick={() => setTab("products")}
                             className={`flex items-center gap-2 px-6 py-4 font-semibold transition ${tab === "products"
@@ -506,40 +551,102 @@ export default function EmployeeDashboard() {
                             </div>
                         )}
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-6">
-                            {products.map((product) => (
-                                <div
-                                    key={product.id}
-                                    className="bg-white rounded-xl shadow-md overflow-hidden"
-                                >
-                                    <div className="w-full h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
-                                        <img
-                                            src={product.image_url}
-                                            alt={product.name}
-                                            loading="lazy"
-                                            decoding="async"
-                                            width="300"
-                                            height="300"
-                                            className="w-full h-full object-contain"
-                                        />
-                                    </div>
-                                    <div className="p-4">
-                                        <h3 className="font-semibold text-gray-900 mb-2">{product.name}</h3>
-                                        <p className="text-lg font-bold text-blue-600 mb-2">
-                                            ₹{product.price.toFixed(2)}
-                                        </p>
-                                        <p className="text-sm text-gray-600 mb-4">Stock: {product.stock}</p>
+                        {products.length > 0 && (
+                            <div className="relative mb-4">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Search by Item ID..."
+                                    value={productSearchQuery}
+                                    onChange={(e) => setProductSearchQuery(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                        )}
+                        {/* Categories Section */}
+                        {categories.length > 0 && (
+                            <div className="w-full overflow-x-auto">
+                                <div className="flex gap-3 whitespace-nowrap px-2 py-3">
+                                    <button
+                                        onClick={() => setSelectedCategory(null)}
+                                        className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === null
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                            }`}
+                                    >
+                                        All
+                                    </button>
+                                    {categories.map((category) => (
                                         <button
-                                            onClick={() => addToCart(product)}
-                                            disabled={!activeCustomer || product.stock === 0}
-                                            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                            key={category}
+                                            onClick={() => setSelectedCategory(category)}
+                                            className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === category
+                                                ? 'bg-blue-600 text-white'
+                                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                }`}
                                         >
-                                            Add to Cart
+                                            {category}
                                         </button>
-                                    </div>
+                                    ))}
                                 </div>
-                            ))}
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-6">
+                            {filteredProducts.length === 0 ? (
+                                <p className="col-span-full text-center text-gray-500 py-6">
+                                    No products match your search.
+                                </p>
+                            ) : (
+                                filteredProducts.map((product) => (
+                                    <div
+                                        key={product.id}
+                                        className="bg-white rounded-xl shadow-md overflow-hidden"
+                                    >
+                                        <div className="w-full h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
+                                            <img
+                                                src={product.image_url}
+                                                alt={product.name}
+                                                loading="lazy"
+                                                className="w-full h-full object-contain"
+                                            />
+                                        </div>
+
+                                        <div className="p-4">
+                                            <div className="flex items-start justify-between gap-3 mb-2">
+                                                <h3 className="font-semibold text-gray-900">
+                                                    {product.name}
+                                                </h3>
+
+                                                {product.item_id != null && (
+                                                    <span className="text-xs font-semibold px-2 py-1 rounded-full bg-gray-100">
+                                                        Item ID: {product.item_id}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <p className="text-lg font-bold text-blue-600 mb-2">
+                                                ₹{product.price.toFixed(2)}
+                                            </p>
+
+                                            <p className="text-sm text-gray-600 mb-4">
+                                                Stock: {product.stock}
+                                            </p>
+
+                                            <button
+                                                onClick={() => addToCart(product)}
+                                                disabled={!activeCustomer || product.stock === 0}
+                                                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+                                            >
+                                                Add to Cart
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
                         </div>
+
+
 
                     </div>
                 )}
@@ -612,72 +719,72 @@ export default function EmployeeDashboard() {
                                                 <p className="col-span-full text-center text-gray-500 py-6">No customers match your search.</p>
                                             ) : (
                                                 filtered.map((customer) => (
-                                            <div
-                                                key={customer.id}
-                                                onClick={() => selectCustomer(customer)}
-                                                className={`border rounded-lg p-4 cursor-pointer transition ${activeCustomer?.id === customer.id
-                                                    ? "border-blue-500 bg-blue-50"
-                                                    : "border-gray-200 hover:border-blue-300 hover:bg-gray-50"
-                                                    }`}
-                                            >
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <h3 className="font-semibold text-gray-900">
-                                                            {customer.name}
-                                                        </h3>
-                                                        <p className="text-sm text-gray-600 mt-1">
-                                                            {customer.phone}
-                                                        </p>
-                                                        <p className="text-sm text-gray-500 mt-2 line-clamp-2">
-                                                            {customer.address}
-                                                        </p>
-                                                        {customer.latitude && customer.longitude && (
-                                                            <p className="text-xs text-green-600 mt-2">
-                                                                📍 GPS location saved
-                                                            </p>
-                                                        )}
-                                                    </div>
-
-                                                    {activeCustomer?.id === customer.id && (
-                                                        <span className="text-blue-600 font-semibold text-sm">
-                                                            Active
-                                                        </span>
-                                                    )}
-                                                </div>
-
-                                                <div className="mt-3 flex gap-2">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            selectCustomer(customer);
-                                                        }}
-                                                        className="flex-auto bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition text-sm font-semibold"
+                                                    <div
+                                                        key={customer.id}
+                                                        onClick={() => selectCustomer(customer)}
+                                                        className={`border rounded-lg p-4 cursor-pointer transition ${activeCustomer?.id === customer.id
+                                                            ? "border-blue-500 bg-blue-50"
+                                                            : "border-gray-200 hover:border-blue-300 hover:bg-gray-50"
+                                                            }`}
                                                     >
-                                                        Select Customer
-                                                    </button>
-                                                    {customer.latitude != null && customer.longitude != null && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                const url = `https://www.google.com/maps?q=${customer.latitude},${customer.longitude}`;
-                                                                window.open(url, "_blank", "noopener,noreferrer");
-                                                            }}
-                                                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition text-sm font-medium"
-                                                            title="Open location in Google Maps"
-                                                        >
-                                                            <Navigation className="h-4 w-4" />
-                                                            Locate
-                                                        </button>
-                                                    )}
-                                                    {/* <button
+                                                        <div className="flex justify-between items-start">
+                                                            <div>
+                                                                <h3 className="font-semibold text-gray-900">
+                                                                    {customer.name}
+                                                                </h3>
+                                                                <p className="text-sm text-gray-600 mt-1">
+                                                                    {customer.phone}
+                                                                </p>
+                                                                <p className="text-sm text-gray-500 mt-2 line-clamp-2 break-all">
+                                                                    {customer.address}
+                                                                </p>
+                                                                {customer.latitude && customer.longitude && (
+                                                                    <p className="text-xs text-green-600 mt-2">
+                                                                        📍 GPS location saved
+                                                                    </p>
+                                                                )}
+                                                            </div>
+
+                                                            {activeCustomer?.id === customer.id && (
+                                                                <span className="text-blue-600 font-semibold text-sm">
+                                                                    Active
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="mt-3 flex gap-2">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    selectCustomer(customer);
+                                                                }}
+                                                                className="flex-auto bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition text-sm font-semibold"
+                                                            >
+                                                                Select Customer
+                                                            </button>
+                                                            {customer.latitude != null && customer.longitude != null && (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const url = `https://www.google.com/maps?q=${customer.latitude},${customer.longitude}`;
+                                                                        window.open(url, "_blank", "noopener,noreferrer");
+                                                                    }}
+                                                                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition text-sm font-medium"
+                                                                    title="Open location in Google Maps"
+                                                                >
+                                                                    <Navigation className="h-4 w-4" />
+                                                                    Locate
+                                                                </button>
+                                                            )}
+                                                            {/* <button
                                                         onClick={(e) => deleteCustomer(customer.id, e)}
                                                         className="flex items-center justify-center p-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition"
                                                         title="Delete customer"
                                                     >
                                                         <Trash2 className="h-4 w-4" />
                                                     </button> */}
-                                                </div>
-                                            </div>
+                                                        </div>
+                                                    </div>
                                                 )));
                                         })()}
                                     </div>
@@ -1065,6 +1172,7 @@ export default function EmployeeDashboard() {
                         )}
                     </div>
                 )}
+
 
 
             </div>
