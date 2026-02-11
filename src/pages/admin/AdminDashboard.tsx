@@ -971,14 +971,17 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     if (Capacitor.getPlatform() === 'web') {
       doc.save(filename);
     } else {
-      // Convert PDF to blob
       const pdfBlob = doc.output('blob');
       const url = URL.createObjectURL(pdfBlob);
     
-      // Open in Chrome (external browser)
-      await Browser.open({
-        url: url,
-      });
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;   // Forces download
+      document.body.appendChild(link);
+      link.click();
+    
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     }
     
   };
