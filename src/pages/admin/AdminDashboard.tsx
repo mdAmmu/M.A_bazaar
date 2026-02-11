@@ -304,7 +304,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
   };
 
-  
+
   const fetchOrders = async () => {
     try {
       const { data } = await supabase
@@ -520,7 +520,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     setEditingProduct(null);
   };
 
-  
+
   const deleteProduct = async (id: string) => {
     // if (!confirm('Are you sure you want to delete this product?')) return;
 
@@ -790,89 +790,92 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   /** Build and save bill as thermal-size PDF (80mm width) for printing/saving to device */
   const saveBillAsThermalPdf = async (order: OrderWithItems, billNo: string) => {
     const safe = (v: unknown) => String(v ?? '').trim();
-
+  
     const money = (value: unknown, opts?: { negative?: boolean }) => {
       const n = Number(value ?? 0);
       const abs = Math.abs(Number.isFinite(n) ? n : 0);
       const prefix = opts?.negative ? '-' : '';
       return `${prefix}Rs. ${abs.toFixed(2)}`;
     };
-
-    const customerFromTable = (order as OrderWithItems).customers;
-    const customerName =
-      customerFromTable?.name ||
-      (order as Order & { customer_name?: string }).customer_name ||
-      order.profiles?.name ||
-      '';
-    const customerPhone =
-      customerFromTable?.phone ||
-      (order as Order & { customer_phone?: string }).customer_phone ||
-      order.profiles?.phone ||
-      '';
-    const customerAddress =
-      customerFromTable?.address ||
-      (order as Order & { customer_address?: string }).customer_address ||
-      order.profiles?.address ||
-      '';
-
-    const margin = THERMAL_MARGIN_MM;
-    const width = THERMAL_PDF_WIDTH_MM;
+  
+    // ✅ Define these properly
+    const margin = 5;      // 5mm margin
+    const width = 80;      // 80mm thermal paper width
     const contentWidth = width - margin * 2;
-
+  
     const lineHeight = 4;
     const fontSmall = 7;
     const fontNormal = 8;
     const fontTitle = 10;
-
-    // --------------------------------------------
-    // STEP 1: Create temporary doc to calculate height
-    // --------------------------------------------
+  
+    const customerFromTable = order.customers;
+    const customerName =
+      customerFromTable?.name ||
+      (order as any)?.customer_name ||
+      order.profiles?.name ||
+      '';
+  
+    const customerPhone =
+      customerFromTable?.phone ||
+      (order as any)?.customer_phone ||
+      order.profiles?.phone ||
+      '';
+  
+    const customerAddress =
+      customerFromTable?.address ||
+      (order as any)?.customer_address ||
+      order.profiles?.address ||
+      '';
+  
+    // ----------------------------
+    // Calculate dynamic height
+    // ----------------------------
     const tempDoc = new jsPDF({ unit: 'mm' });
-
     let y = margin;
-
+  
     const addLine = (lines = 1) => {
       y += lineHeight * lines;
     };
-
-    addLine(2); // Title
-    addLine(3); // Bill, Order, Date
-    addLine(1); // Customer label
-    addLine(3); // Name, Phone
-
-    const addrLines = tempDoc.splitTextToSize(safe(customerAddress) || '-', contentWidth);
+  
+    addLine(2);
+    addLine(3);
+    addLine(1);
+    addLine(3);
+  
+    const addrLines = tempDoc.splitTextToSize(
+      safe(customerAddress) || '-',
+      contentWidth
+    );
     addLine(addrLines.length);
-
-    addLine(2); // Items title + spacing
-    addLine(2); // Header + line
-
+  
+    addLine(4);
+  
     for (const it of order.order_items || []) {
       const name = safe(it.products?.name || 'Unknown');
       const nameLines = tempDoc.splitTextToSize(name, contentWidth * 0.4);
       addLine(nameLines.length);
     }
-
-    addLine(6); // totals section
-    addLine(2); // thank you
-
+  
+    addLine(8);
+  
     const finalHeight = y + margin;
-
-    // --------------------------------------------
-    // STEP 2: Create final doc with dynamic height
-    // --------------------------------------------
+  
+    // ----------------------------
+    // Create actual PDF
+    // ----------------------------
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: [width, finalHeight],
     });
-
+  
     y = margin;
     const w = contentWidth;
-
+  
     doc.setFontSize(fontTitle);
     doc.text('THERMAL BILL', margin, y);
     y += lineHeight + 2;
-
+  
     doc.setFontSize(fontSmall);
     doc.text(`Bill: ${billNo}`, margin, y);
     y += lineHeight;
@@ -880,97 +883,115 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     y += lineHeight;
     doc.text(`Date: ${new Date().toLocaleString()}`, margin, y);
     y += lineHeight + 2;
-
+  
     doc.setFontSize(fontNormal);
     doc.text('Customer', margin, y);
     y += lineHeight;
-
+  
     doc.setFontSize(fontSmall);
     doc.text(safe(customerName), margin, y);
     y += lineHeight;
     doc.text(safe(customerPhone), margin, y);
     y += lineHeight;
-
-    const addrLinesFinal = doc.splitTextToSize(safe(customerAddress) || '-', w);
+  
+    const addrLinesFinal = doc.splitTextToSize(
+      safe(customerAddress) || '-',
+      w
+    );
+  
     for (const line of addrLinesFinal) {
       doc.text(String(line), margin, y);
       y += lineHeight;
     }
-
+  
     y += 2;
-
+  
     doc.setFontSize(fontNormal);
     doc.text('Items', margin, y);
     y += lineHeight;
-
+  
     const colW = [w * 0.4, w * 0.15, w * 0.2, w * 0.25];
-
+  
     doc.setFontSize(fontSmall);
     doc.text('Item', margin, y);
     doc.text('Qty', margin + colW[0], y);
     doc.text('Price', margin + colW[0] + colW[1], y);
     doc.text('Subtotal', margin + w, y, { align: 'right' });
-
+  
     y += lineHeight;
     doc.line(margin, y, margin + w, y);
     y += lineHeight;
-
+  
     for (const it of order.order_items || []) {
       const name = safe(it.products?.name || 'Unknown');
       const nameLines = doc.splitTextToSize(name, colW[0]);
-
+  
       const qty = safe(it.quantity);
       const price = money(it.price ?? it.products?.price ?? 0);
       const subtotal = money(it.subtotal ?? 0);
-
+  
       doc.text(nameLines[0], margin, y);
       doc.text(qty, margin + colW[0] + colW[1] - 1, y, { align: 'right' });
       doc.text(price, margin + colW[0] + colW[1] + colW[2] - 1, y, { align: 'right' });
       doc.text(subtotal, margin + w, y, { align: 'right' });
-
+  
       y += lineHeight;
-
+  
       for (let i = 1; i < nameLines.length; i++) {
         doc.text(nameLines[i], margin, y);
         y += lineHeight;
       }
     }
-
-    y += 2;
-
+  
+    y += 4;
+  
     const totalAmount = Number(order.total_amount || 0);
     const delivery = Number((order as any).delivery_charge ?? 0);
     const discount = Number(order.discount || 0);
     const final = Number(order.final_amount || 0);
-
+  
     doc.text('Subtotal:', margin, y);
     doc.text(money(totalAmount), margin + w, y, { align: 'right' });
     y += lineHeight;
-
+  
     doc.text('Delivery:', margin, y);
     doc.text(money(delivery), margin + w, y, { align: 'right' });
     y += lineHeight;
-
+  
     doc.text('Discount:', margin, y);
     doc.text(money(discount, { negative: discount > 0 }), margin + w, y, { align: 'right' });
     y += lineHeight + 1;
-
+  
     doc.line(margin, y, margin + w, y);
     y += lineHeight;
-
+  
     doc.setFontSize(fontTitle);
     doc.text('Total:', margin, y);
     doc.text(money(final), margin + w, y, { align: 'right' });
+  
     y += lineHeight + 4;
-
+  
     doc.setFontSize(fontSmall);
     doc.text('Thank you!', margin, y);
-
+  
+    // ----------------------------
+    // Force download in Chrome
+    // ----------------------------
     const filename = `Bill_${billNo.replace(/\s/g, '_')}.pdf`;
-
-    doc.save(filename);
-    
+  
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+  
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  
+    URL.revokeObjectURL(url);
   };
+  
 
 
   // const savePdfToMobile = async (base64Data: string, filename: string) => {
@@ -980,18 +1001,18 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   //       data: base64Data,
   //       directory: Directory.Data,
   //     });
-  
+
   //     await Share.share({
   //       title: 'Bill PDF',
   //       url: result.uri,
   //     });
-  
+
   //   } catch (error: any) {
   //     console.error(error);
   //     alert('Error: ' + (error?.message || JSON.stringify(error)));
   //   }
   // };
-  
+
 
   const printBillForOrder = async (order: OrderWithItems) => {
     if (!order?.id) return;
@@ -1305,14 +1326,14 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                             ₹{(order.final_amount || 0).toFixed(2)}
                           </p>
                           <button
-                            onClick={() => printBillForOrder(order)}
+                            onClick={() => saveBillAsThermalPdf(order, order.id)}
                             disabled={printingOrderId === order.id}
                             className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
                           >
                             <Printer className="h-4 w-4" />
                             <span>{printingOrderId === order.id ? 'Saving...' : 'Save PDF'}</span>
                           </button>
-                          
+
                         </div>
                       </div>
                     </div>
