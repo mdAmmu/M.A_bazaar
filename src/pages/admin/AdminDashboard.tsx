@@ -789,205 +789,223 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
   /** Build and save bill as thermal-size PDF (80mm width) for printing/saving to device */
   const saveBillAsThermalPdf = async (order: OrderWithItems, billNo: string) => {
-    const safe = (v: unknown) => String(v ?? '').trim();
-  
-    const money = (value: unknown, opts?: { negative?: boolean }) => {
-      const n = Number(value ?? 0);
-      const abs = Math.abs(Number.isFinite(n) ? n : 0);
-      const prefix = opts?.negative ? '-' : '';
-      return `${prefix}Rs. ${abs.toFixed(2)}`;
-    };
-  
-    // ✅ Define these properly
-    const margin = 5;      // 5mm margin
-    const width = 80;      // 80mm thermal paper width
-    const contentWidth = width - margin * 2;
-  
-    const lineHeight = 4;
-    const fontSmall = 7;
-    const fontNormal = 8;
-    const fontTitle = 10;
-  
-    const customerFromTable = order.customers;
-    const customerName =
-      customerFromTable?.name ||
-      (order as any)?.customer_name ||
-      order.profiles?.name ||
-      '';
-  
-    const customerPhone =
-      customerFromTable?.phone ||
-      (order as any)?.customer_phone ||
-      order.profiles?.phone ||
-      '';
-  
-    const customerAddress =
-      customerFromTable?.address ||
-      (order as any)?.customer_address ||
-      order.profiles?.address ||
-      '';
-  
-    // ----------------------------
-    // Calculate dynamic height
-    // ----------------------------
-    const tempDoc = new jsPDF({ unit: 'mm' });
-    let y = margin;
-  
-    const addLine = (lines = 1) => {
-      y += lineHeight * lines;
-    };
-  
-    addLine(2);
-    addLine(3);
-    addLine(1);
-    addLine(3);
-  
-    const addrLines = tempDoc.splitTextToSize(
-      safe(customerAddress) || '-',
-      contentWidth
-    );
-    addLine(addrLines.length);
-  
-    addLine(4);
-  
-    for (const it of order.order_items || []) {
-      const name = safe(it.products?.name || 'Unknown');
-      const nameLines = tempDoc.splitTextToSize(name, contentWidth * 0.4);
-      addLine(nameLines.length);
-    }
-  
-    addLine(8);
-  
-    const finalHeight = y + margin;
-  
-    // ----------------------------
-    // Create actual PDF
-    // ----------------------------
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: [width, finalHeight],
-    });
-  
-    y = margin;
-    const w = contentWidth;
-  
-    doc.setFontSize(fontTitle);
-    doc.text('THERMAL BILL', margin, y);
-    y += lineHeight + 2;
-  
-    doc.setFontSize(fontSmall);
-    doc.text(`Bill: ${billNo}`, margin, y);
-    y += lineHeight;
-    doc.text(`Order: ${order.id.slice(0, 8)}...`, margin, y);
-    y += lineHeight;
-    doc.text(`Date: ${new Date().toLocaleString()}`, margin, y);
-    y += lineHeight + 2;
-  
-    doc.setFontSize(fontNormal);
-    doc.text('Customer', margin, y);
-    y += lineHeight;
-  
-    doc.setFontSize(fontSmall);
-    doc.text(safe(customerName), margin, y);
-    y += lineHeight;
-    doc.text(safe(customerPhone), margin, y);
-    y += lineHeight;
-  
-    const addrLinesFinal = doc.splitTextToSize(
-      safe(customerAddress) || '-',
-      w
-    );
-  
-    for (const line of addrLinesFinal) {
-      doc.text(String(line), margin, y);
+    try {
+      const safe = (v: unknown) => String(v ?? '').trim();
+
+      const money = (value: unknown, opts?: { negative?: boolean }) => {
+        const n = Number(value ?? 0);
+        const abs = Math.abs(Number.isFinite(n) ? n : 0);
+        const prefix = opts?.negative ? '-' : '';
+        return `${prefix}Rs. ${abs.toFixed(2)}`;
+      };
+
+      // ✅ Define these properly
+      const margin = 5;      // 5mm margin
+      const width = 80;      // 80mm thermal paper width
+      const contentWidth = width - margin * 2;
+
+      const lineHeight = 4;
+      const fontSmall = 7;
+      const fontNormal = 8;
+      const fontTitle = 10;
+
+      const customerFromTable = order.customers;
+      const customerName =
+        customerFromTable?.name ||
+        (order as any)?.customer_name ||
+        order.profiles?.name ||
+        '';
+
+      const customerPhone =
+        customerFromTable?.phone ||
+        (order as any)?.customer_phone ||
+        order.profiles?.phone ||
+        '';
+
+      const customerAddress =
+        customerFromTable?.address ||
+        (order as any)?.customer_address ||
+        order.profiles?.address ||
+        '';
+
+      // ----------------------------
+      // Calculate dynamic height
+      // ----------------------------
+      const tempDoc = new jsPDF({ unit: 'mm' });
+      let y = margin;
+
+      const addLine = (lines = 1) => {
+        y += lineHeight * lines;
+      };
+
+      addLine(2);
+      addLine(3);
+      addLine(1);
+      addLine(3);
+
+      const addrLines = tempDoc.splitTextToSize(
+        safe(customerAddress) || '-',
+        contentWidth
+      );
+      addLine(addrLines.length);
+
+      addLine(4);
+
+      for (const it of order.order_items || []) {
+        const name = safe(it.products?.name || 'Unknown');
+        const nameLines = tempDoc.splitTextToSize(name, contentWidth * 0.4);
+        addLine(nameLines.length);
+      }
+
+      addLine(8);
+
+      const finalHeight = y + margin;
+
+      // ----------------------------
+      // Create actual PDF
+      // ----------------------------
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [width, finalHeight],
+      });
+
+      y = margin;
+      const w = contentWidth;
+
+      doc.setFontSize(fontTitle);
+      doc.text('THERMAL BILL', margin, y);
+      y += lineHeight + 2;
+
+      doc.setFontSize(fontSmall);
+      doc.text(`Bill: ${billNo}`, margin, y);
       y += lineHeight;
-    }
-  
-    y += 2;
-  
-    doc.setFontSize(fontNormal);
-    doc.text('Items', margin, y);
-    y += lineHeight;
-  
-    const colW = [w * 0.4, w * 0.15, w * 0.2, w * 0.25];
-  
-    doc.setFontSize(fontSmall);
-    doc.text('Item', margin, y);
-    doc.text('Qty', margin + colW[0], y);
-    doc.text('Price', margin + colW[0] + colW[1], y);
-    doc.text('Subtotal', margin + w, y, { align: 'right' });
-  
-    y += lineHeight;
-    doc.line(margin, y, margin + w, y);
-    y += lineHeight;
-  
-    for (const it of order.order_items || []) {
-      const name = safe(it.products?.name || 'Unknown');
-      const nameLines = doc.splitTextToSize(name, colW[0]);
-  
-      const qty = safe(it.quantity);
-      const price = money(it.price ?? it.products?.price ?? 0);
-      const subtotal = money(it.subtotal ?? 0);
-  
-      doc.text(nameLines[0], margin, y);
-      doc.text(qty, margin + colW[0] + colW[1] - 1, y, { align: 'right' });
-      doc.text(price, margin + colW[0] + colW[1] + colW[2] - 1, y, { align: 'right' });
-      doc.text(subtotal, margin + w, y, { align: 'right' });
-  
+      doc.text(`Order: ${order.id.slice(0, 8)}...`, margin, y);
       y += lineHeight;
-  
-      for (let i = 1; i < nameLines.length; i++) {
-        doc.text(nameLines[i], margin, y);
+      doc.text(`Date: ${new Date().toLocaleString()}`, margin, y);
+      y += lineHeight + 2;
+
+      doc.setFontSize(fontNormal);
+      doc.text('Customer', margin, y);
+      y += lineHeight;
+
+      doc.setFontSize(fontSmall);
+      doc.text(safe(customerName), margin, y);
+      y += lineHeight;
+      doc.text(safe(customerPhone), margin, y);
+      y += lineHeight;
+
+      const addrLinesFinal = doc.splitTextToSize(
+        safe(customerAddress) || '-',
+        w
+      );
+
+      for (const line of addrLinesFinal) {
+        doc.text(String(line), margin, y);
         y += lineHeight;
       }
-    }
-  
-    y += 4;
-  
-    const totalAmount = Number(order.total_amount || 0);
-    const delivery = Number((order as any).delivery_charge ?? 0);
-    const discount = Number(order.discount || 0);
-    const final = Number(order.final_amount || 0);
-  
-    doc.text('Subtotal:', margin, y);
-    doc.text(money(totalAmount), margin + w, y, { align: 'right' });
-    y += lineHeight;
-  
-    doc.text('Delivery:', margin, y);
-    doc.text(money(delivery), margin + w, y, { align: 'right' });
-    y += lineHeight;
-  
-    doc.text('Discount:', margin, y);
-    doc.text(money(discount, { negative: discount > 0 }), margin + w, y, { align: 'right' });
-    y += lineHeight + 1;
-  
-    doc.line(margin, y, margin + w, y);
-    y += lineHeight;
-  
-    doc.setFontSize(fontTitle);
-    doc.text('Total:', margin, y);
-    doc.text(money(final), margin + w, y, { align: 'right' });
-  
-    y += lineHeight + 4;
-  
-    doc.setFontSize(fontSmall);
-    doc.text('Thank you!', margin, y);
-  
-    // ----------------------------
-    // Force download in Chrome
-    // ----------------------------
-    const filename = `Bill_${billNo.replace(/\s/g, '_')}.pdf`;
 
-    // Mobile-safe method
-    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-      doc.output('dataurlnewwindow'); 
-    } else {
-      doc.save(filename);
+      y += 2;
+
+      doc.setFontSize(fontNormal);
+      doc.text('Items', margin, y);
+      y += lineHeight;
+
+      const colW = [w * 0.4, w * 0.15, w * 0.2, w * 0.25];
+
+      doc.setFontSize(fontSmall);
+      doc.text('Item', margin, y);
+      doc.text('Qty', margin + colW[0], y);
+      doc.text('Price', margin + colW[0] + colW[1], y);
+      doc.text('Subtotal', margin + w, y, { align: 'right' });
+
+      y += lineHeight;
+      doc.line(margin, y, margin + w, y);
+      y += lineHeight;
+
+      for (const it of order.order_items || []) {
+        const name = safe(it.products?.name || 'Unknown');
+        const nameLines = doc.splitTextToSize(name, colW[0]);
+
+        const qty = safe(it.quantity);
+        const price = money(it.price ?? it.products?.price ?? 0);
+        const subtotal = money(it.subtotal ?? 0);
+
+        doc.text(nameLines[0], margin, y);
+        doc.text(qty, margin + colW[0] + colW[1] - 1, y, { align: 'right' });
+        doc.text(price, margin + colW[0] + colW[1] + colW[2] - 1, y, { align: 'right' });
+        doc.text(subtotal, margin + w, y, { align: 'right' });
+
+        y += lineHeight;
+
+        for (let i = 1; i < nameLines.length; i++) {
+          doc.text(nameLines[i], margin, y);
+          y += lineHeight;
+        }
+      }
+
+      y += 4;
+
+      const totalAmount = Number(order.total_amount || 0);
+      const delivery = Number((order as any).delivery_charge ?? 0);
+      const discount = Number(order.discount || 0);
+      const final = Number(order.final_amount || 0);
+
+      doc.text('Subtotal:', margin, y);
+      doc.text(money(totalAmount), margin + w, y, { align: 'right' });
+      y += lineHeight;
+
+      doc.text('Delivery:', margin, y);
+      doc.text(money(delivery), margin + w, y, { align: 'right' });
+      y += lineHeight;
+
+      doc.text('Discount:', margin, y);
+      doc.text(money(discount, { negative: discount > 0 }), margin + w, y, { align: 'right' });
+      y += lineHeight + 1;
+
+      doc.line(margin, y, margin + w, y);
+      y += lineHeight;
+
+      doc.setFontSize(fontTitle);
+      doc.text('Total:', margin, y);
+      doc.text(money(final), margin + w, y, { align: 'right' });
+
+      y += lineHeight + 4;
+
+      doc.setFontSize(fontSmall);
+      doc.text('Thank you!', margin, y);
+
+      // ----------------------------
+      // UNIVERSAL DOWNLOAD (Mobile + Desktop)
+      // ----------------------------
+      const filename = `Bill_${billNo}.pdf`;
+
+      // Create blob
+      const pdfBlob = doc.output("blob");
+
+      // Create temporary URL
+      const blobUrl = URL.createObjectURL(pdfBlob);
+
+      // Create invisible link
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename;
+
+      document.body.appendChild(link);
+      link.click();
+
+      // Cleanup
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+
+
+    } catch (err) {
+      console.error(err);
+      alert("Failed to generate bill PDF");
     }
 
   };
-  
+
 
 
   // const savePdfToMobile = async (base64Data: string, filename: string) => {
@@ -1010,49 +1028,49 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   // };
 
 
-  const printBillForOrder = async (order: OrderWithItems) => {
-    if (!order?.id) return;
-    if (!order.order_items || order.order_items.length === 0) {
-      alert('Cannot print bill: order has no items');
-      return;
-    }
+  // const printBillForOrder = async (order: OrderWithItems) => {
+  //   if (!order?.id) return;
+  //   if (!order.order_items || order.order_items.length === 0) {
+  //     alert('Cannot print bill: order has no items');
+  //     return;
+  //   }
 
-    setPrintingOrderId(order.id);
+  //   setPrintingOrderId(order.id);
 
-    try {
-      // Update stock
-      for (const item of order.order_items) {
-        const productId = item.product_id ?? item.products?.id;
-        if (!productId) continue;
+  //   try {
+  //     // Update stock
+  //     for (const item of order.order_items) {
+  //       const productId = item.product_id ?? item.products?.id;
+  //       if (!productId) continue;
 
-        const { data: product } = await supabase
-          .from('products')
-          .select('stock')
-          .eq('id', productId)
-          .maybeSingle();
+  //       const { data: product } = await supabase
+  //         .from('products')
+  //         .select('stock')
+  //         .eq('id', productId)
+  //         .maybeSingle();
 
-        const currentStock = product?.stock ?? 0;
-        const newStock = Math.max(0, currentStock - item.quantity);
+  //       const currentStock = product?.stock ?? 0;
+  //       const newStock = Math.max(0, currentStock - item.quantity);
 
-        await supabase
-          .from('products')
-          .update({ stock: newStock })
-          .eq('id', productId);
-      }
+  //       await supabase
+  //         .from('products')
+  //         .update({ stock: newStock })
+  //         .eq('id', productId);
+  //     }
 
-      // ✅ billNo is defined HERE
-      const billNo = generateBillNumber();
+  //     // ✅ billNo is defined HERE
+  //     const billNo = generateBillNumber();
 
-      // ✅ MUST be awaited
-      await saveBillAsThermalPdf(order, billNo);
+  //     // ✅ MUST be awaited
+  //     await saveBillAsThermalPdf(order, billNo);
 
-    } catch (error) {
-      console.error('Error printing bill:', error);
-      alert('Failed to print bill');
-    } finally {
-      setPrintingOrderId(null);
-    }
-  };
+  //   } catch (error) {
+  //     console.error('Error printing bill:', error);
+  //     alert('Failed to print bill');
+  //   } finally {
+  //     setPrintingOrderId(null);
+  //   }
+  // };
 
 
 
