@@ -805,9 +805,9 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       const contentWidth = width - margin * 2;
 
       const lineHeight = 4;
-      const fontSmall = 7;
-      const fontNormal = 8;
-      const fontTitle = 10;
+      const fontSmall = 10;
+      const fontNormal = 11;
+      const fontTitle = 12;
 
       const customerFromTable = order.customers;
       const customerName =
@@ -873,10 +873,12 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       y = margin;
       const w = contentWidth;
 
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(fontTitle);
       doc.text('THERMAL BILL', margin, y);
       y += lineHeight + 2;
 
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(fontSmall);
       doc.text(`Bill: ${billNo}`, margin, y);
       y += lineHeight;
@@ -885,10 +887,12 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       doc.text(`Date: ${new Date().toLocaleString()}`, margin, y);
       y += lineHeight + 2;
 
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(fontNormal);
       doc.text('Customer', margin, y);
       y += lineHeight;
 
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(fontSmall);
       doc.text(safe(customerName), margin, y);
       y += lineHeight;
@@ -907,12 +911,14 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       y += 2;
 
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(fontNormal);
       doc.text('Items', margin, y);
       y += lineHeight;
 
       const colW = [w * 0.4, w * 0.15, w * 0.2, w * 0.25];
 
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(fontSmall);
       doc.text('Item', margin, y);
       doc.text('Qty', margin + colW[0], y);
@@ -951,14 +957,17 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       const discount = Number(order.discount || 0);
       const final = Number(order.final_amount || 0);
 
+      doc.setFont("helvetica", "bold");
       doc.text('Subtotal:', margin, y);
       doc.text(money(totalAmount), margin + w, y, { align: 'right' });
       y += lineHeight;
 
+      doc.setFont("helvetica", "bold");
       doc.text('Delivery:', margin, y);
       doc.text(money(delivery), margin + w, y, { align: 'right' });
       y += lineHeight;
 
+      doc.setFont("helvetica", "bold");
       doc.text('Discount:', margin, y);
       doc.text(money(discount, { negative: discount > 0 }), margin + w, y, { align: 'right' });
       y += lineHeight + 1;
@@ -966,13 +975,15 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       doc.line(margin, y, margin + w, y);
       y += lineHeight;
 
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(fontTitle);
       doc.text('Total:', margin, y);
       doc.text(money(final), margin + w, y, { align: 'right' });
 
       y += lineHeight + 4;
 
-      doc.setFontSize(fontSmall);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(fontNormal);
       doc.text('Thank you!', margin, y);
 
       // ----------------------------
