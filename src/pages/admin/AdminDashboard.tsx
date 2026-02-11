@@ -4,12 +4,23 @@ import { jsPDF } from 'jspdf';
 import { useAuth } from '../../context/AuthContext';
 import { supabase, Product, Order, OrderItem, Profile } from '../../lib/supabase';
 import BulkProductUpload from './BulkProductUpload';
+import { Capacitor } from '@capacitor/core';
+import { registerPlugin } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
+import { Browser } from '@capacitor/browser';
+
+
+
+
+
 
 // Thermal receipt size: 80mm width (standard for thermal printers)
-const THERMAL_PDF_WIDTH_MM = 80;
-const THERMAL_PDF_MAX_HEIGHT_MM = 400;
-const THERMAL_MARGIN_MM = 3;
-const THERMAL_CONTENT_WIDTH_MM = THERMAL_PDF_WIDTH_MM - THERMAL_MARGIN_MM * 2;
+// const THERMAL_PDF_WIDTH_MM = 80;
+// const THERMAL_PDF_MAX_HEIGHT_MM = 400;
+// const THERMAL_MARGIN_MM = 3;
+// const THERMAL_CONTENT_WIDTH_MM = THERMAL_PDF_WIDTH_MM - THERMAL_MARGIN_MM * 2;
+
 
 type Page =
   | 'home'
@@ -898,16 +909,16 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   };
 
   /** Build and save bill as thermal-size PDF (80mm width) for printing/saving to device */
-  const saveBillAsThermalPdf = (order: OrderWithItems, billNo: string) => {
+  const saveBillAsThermalPdf = async (order: OrderWithItems, billNo: string) => {
     const safe = (v: unknown) => String(v ?? '').trim();
-    // jsPDF built-in fonts don't reliably render the ₹ symbol on all devices.
-    // Use "Rs." so money amounts display correctly everywhere.
+
     const money = (value: unknown, opts?: { negative?: boolean }) => {
       const n = Number(value ?? 0);
       const abs = Math.abs(Number.isFinite(n) ? n : 0);
       const prefix = opts?.negative ? '-' : '';
       return `${prefix}Rs. ${abs.toFixed(2)}`;
     };
+
     const customerFromTable = (order as OrderWithItems).customers;
     const customerName =
       customerFromTable?.name ||
@@ -925,20 +936,59 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       order.profiles?.address ||
       '';
 
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: [THERMAL_PDF_WIDTH_MM, THERMAL_PDF_MAX_HEIGHT_MM],
-      hotfixes: ['pxToMm'],
-    });
-
     const margin = THERMAL_MARGIN_MM;
-    const w = THERMAL_CONTENT_WIDTH_MM;
-    let y = margin;
+    const width = THERMAL_PDF_WIDTH_MM;
+    const contentWidth = width - margin * 2;
+
     const lineHeight = 4;
     const fontSmall = 7;
     const fontNormal = 8;
     const fontTitle = 10;
+
+    // --------------------------------------------
+    // STEP 1: Create temporary doc to calculate height
+    // --------------------------------------------
+    const tempDoc = new jsPDF({ unit: 'mm' });
+
+    let y = margin;
+
+    const addLine = (lines = 1) => {
+      y += lineHeight * lines;
+    };
+
+    addLine(2); // Title
+    addLine(3); // Bill, Order, Date
+    addLine(1); // Customer label
+    addLine(3); // Name, Phone
+
+    const addrLines = tempDoc.splitTextToSize(safe(customerAddress) || '-', contentWidth);
+    addLine(addrLines.length);
+
+    addLine(2); // Items title + spacing
+    addLine(2); // Header + line
+
+    for (const it of order.order_items || []) {
+      const name = safe(it.products?.name || 'Unknown');
+      const nameLines = tempDoc.splitTextToSize(name, contentWidth * 0.4);
+      addLine(nameLines.length);
+    }
+
+    addLine(6); // totals section
+    addLine(2); // thank you
+
+    const finalHeight = y + margin;
+
+    // --------------------------------------------
+    // STEP 2: Create final doc with dynamic height
+    // --------------------------------------------
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: [width, finalHeight],
+    });
+
+    y = margin;
+    const w = contentWidth;
 
     doc.setFontSize(fontTitle);
     doc.text('THERMAL BILL', margin, y);
@@ -955,16 +1005,19 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     doc.setFontSize(fontNormal);
     doc.text('Customer', margin, y);
     y += lineHeight;
+
     doc.setFontSize(fontSmall);
     doc.text(safe(customerName), margin, y);
     y += lineHeight;
     doc.text(safe(customerPhone), margin, y);
     y += lineHeight;
-    const addrLines = doc.splitTextToSize(safe(customerAddress) || '-', w);
-    for (const line of addrLines) {
+
+    const addrLinesFinal = doc.splitTextToSize(safe(customerAddress) || '-', w);
+    for (const line of addrLinesFinal) {
       doc.text(String(line), margin, y);
       y += lineHeight;
     }
+
     y += 2;
 
     doc.setFontSize(fontNormal);
@@ -972,63 +1025,105 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     y += lineHeight;
 
     const colW = [w * 0.4, w * 0.15, w * 0.2, w * 0.25];
+
     doc.setFontSize(fontSmall);
     doc.text('Item', margin, y);
     doc.text('Qty', margin + colW[0], y);
     doc.text('Price', margin + colW[0] + colW[1], y);
-    doc.text('Subtotal', margin + colW[0] + colW[1] + colW[2], y);
+    doc.text('Subtotal', margin + w, y, { align: 'right' });
+
     y += lineHeight;
-    doc.setDrawColor(0, 0, 0);
     doc.line(margin, y, margin + w, y);
     y += lineHeight;
 
     for (const it of order.order_items || []) {
       const name = safe(it.products?.name || 'Unknown');
       const nameLines = doc.splitTextToSize(name, colW[0]);
+
       const qty = safe(it.quantity);
       const price = money(it.price ?? it.products?.price ?? 0);
       const subtotal = money(it.subtotal ?? 0);
-      doc.text(nameLines[0] || name, margin, y);
-      // Right-align numeric columns so they don't overlap or wrap
+
+      doc.text(nameLines[0], margin, y);
       doc.text(qty, margin + colW[0] + colW[1] - 1, y, { align: 'right' });
       doc.text(price, margin + colW[0] + colW[1] + colW[2] - 1, y, { align: 'right' });
       doc.text(subtotal, margin + w, y, { align: 'right' });
+
       y += lineHeight;
+
       for (let i = 1; i < nameLines.length; i++) {
         doc.text(nameLines[i], margin, y);
         y += lineHeight;
       }
     }
+
     y += 2;
 
     const totalAmount = Number(order.total_amount || 0);
-    const delivery = Number((order as Order & { delivery_charge?: number }).delivery_charge ?? 0);
+    const delivery = Number((order as any).delivery_charge ?? 0);
     const discount = Number(order.discount || 0);
     const final = Number(order.final_amount || 0);
 
     doc.text('Subtotal:', margin, y);
     doc.text(money(totalAmount), margin + w, y, { align: 'right' });
     y += lineHeight;
+
     doc.text('Delivery:', margin, y);
     doc.text(money(delivery), margin + w, y, { align: 'right' });
     y += lineHeight;
+
     doc.text('Discount:', margin, y);
     doc.text(money(discount, { negative: discount > 0 }), margin + w, y, { align: 'right' });
     y += lineHeight + 1;
-    doc.setFontSize(fontNormal);
-    doc.setDrawColor(0, 0, 0);
+
     doc.line(margin, y, margin + w, y);
     y += lineHeight;
+
     doc.setFontSize(fontTitle);
     doc.text('Total:', margin, y);
     doc.text(money(final), margin + w, y, { align: 'right' });
     y += lineHeight + 4;
+
     doc.setFontSize(fontSmall);
     doc.text('Thank you!', margin, y);
 
     const filename = `Bill_${billNo.replace(/\s/g, '_')}.pdf`;
-    doc.save(filename);
+    
+    if (Capacitor.getPlatform() === 'web') {
+      doc.save(filename);
+    } else {
+      // Convert PDF to blob
+      const pdfBlob = doc.output('blob');
+      const url = URL.createObjectURL(pdfBlob);
+    
+      // Open in Chrome (external browser)
+      await Browser.open({
+        url: url,
+      });
+    }
+    
   };
+
+
+  const savePdfToMobile = async (base64Data: string, filename: string) => {
+    try {
+      const result = await Filesystem.writeFile({
+        path: filename,
+        data: base64Data,
+        directory: Directory.Data,
+      });
+  
+      await Share.share({
+        title: 'Bill PDF',
+        url: result.uri,
+      });
+  
+    } catch (error: any) {
+      console.error(error);
+      alert('Error: ' + (error?.message || JSON.stringify(error)));
+    }
+  };
+  
 
   const printBillForOrder = async (order: OrderWithItems) => {
     if (!order?.id) return;
@@ -1038,38 +1133,34 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
 
     setPrintingOrderId(order.id);
+
     try {
-      // Decrement stock for each product in this order
+      // Update stock
       for (const item of order.order_items) {
         const productId = item.product_id ?? item.products?.id;
         if (!productId) continue;
 
-        const { data: product, error: productError } = await supabase
+        const { data: product } = await supabase
           .from('products')
           .select('stock')
           .eq('id', productId)
           .maybeSingle();
 
-        if (productError) {
-          console.error('Error fetching product stock:', productError);
-          continue;
-        }
-
-        const currentStock = (product as { stock: number } | null)?.stock ?? 0;
+        const currentStock = product?.stock ?? 0;
         const newStock = Math.max(0, currentStock - item.quantity);
 
-        const { error: updateError } = await supabase
+        await supabase
           .from('products')
           .update({ stock: newStock })
           .eq('id', productId);
-
-        if (updateError) {
-          console.error('Error updating product stock:', updateError);
-        }
       }
 
+      // ✅ billNo is defined HERE
       const billNo = generateBillNumber();
-      saveBillAsThermalPdf(order, billNo);
+
+      // ✅ MUST be awaited
+      await saveBillAsThermalPdf(order, billNo);
+
     } catch (error) {
       console.error('Error printing bill:', error);
       alert('Failed to print bill');
@@ -1077,6 +1168,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       setPrintingOrderId(null);
     }
   };
+
 
 
   if (loading) {
@@ -1350,8 +1442,9 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                             className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
                           >
                             <Printer className="h-4 w-4" />
-                            <span>{printingOrderId === order.id ? 'Saving...' : 'Save as PDF'}</span>
+                            <span>{printingOrderId === order.id ? 'Saving...' : 'Save PDF'}</span>
                           </button>
+                          
                         </div>
                       </div>
                     </div>

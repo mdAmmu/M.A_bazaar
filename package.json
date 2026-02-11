@@ -12,6 +12,10 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",
+    "@capacitor/app-launcher": "^8.0.0",
+    "@capacitor/filesystem": "^8.1.0",
+    "@capacitor/geolocation": "^8.0.0",
+    "@capacitor/share": "^8.0.0",
     "@supabase/supabase-js": "^2.57.4",
     "jspdf": "^4.1.0",
     "lucide-react": "^0.344.0",

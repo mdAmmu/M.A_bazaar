@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Package, Users, ShoppingCart, MapPin, Trash2, ArrowLeft, Minus, Plus, ChevronUp, ChevronDown, Calendar, DollarSign, Navigation, Search } from "lucide-react";
+import { Package, Users, ShoppingCart, MapPin, Trash2, ArrowLeft, Minus, Plus, ChevronUp, ChevronDown, Calendar, DollarSign, Navigation, Search, LogOut } from "lucide-react";
 import { supabase, Product } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 
@@ -39,7 +39,7 @@ type OrderWithItems = {
 
 // ---------------- COMPONENT ----------------
 export default function EmployeeDashboard() {
-    const { profile } = useAuth();
+    const { profile, signOut } = useAuth();
     const [tab, setTab] = useState<"products" | "customers" | "orders" | "cart">("products");
     const [employeeId, setEmployeeId] = useState<string | null>(null);
 
@@ -50,6 +50,7 @@ export default function EmployeeDashboard() {
     const [cart, setCart] = useState<CartItem[]>([]);
     const [orders, setOrders] = useState<OrderWithItems[]>([]);
     const [loading, setLoading] = useState(true);
+    
 
     // New customer form
     const [name, setName] = useState("");
@@ -72,43 +73,43 @@ export default function EmployeeDashboard() {
     useEffect(() => {
         const categories = Array.from(
             new Set(products.map((p) => p.category).filter((c): c is string => Boolean(c)))
-          ).sort();
-          setCategories(categories);
+        ).sort();
+        setCategories(categories);
     }, [products]);
 
     useEffect(() => {
         let filtered = products;
-      
+
         // ✅ Category filter
         if (selectedCategory) {
-          filtered = filtered.filter(
-            (p) =>
-              p.category?.toLowerCase() === selectedCategory.toLowerCase()
-          );
+            filtered = filtered.filter(
+                (p) =>
+                    p.category?.toLowerCase() === selectedCategory.toLowerCase()
+            );
         }
-      
+
         // ✅ Search (Item ID OR Name)
         const raw = productSearchQuery.trim().toLowerCase();
         if (raw) {
-          const numericQ = raw.replace(/[^\d]/g, "");
-          const targetId = numericQ ? parseInt(numericQ, 10) : NaN;
-      
-          filtered = filtered.filter((p) => {
-            const matchesName =
-              p.name?.toLowerCase().includes(raw);
-      
-            const matchesId =
-              !Number.isNaN(targetId) &&
-              p.item_id !== undefined &&
-              p.item_id === targetId;
-      
-            return matchesName || matchesId;
-          });
+            const numericQ = raw.replace(/[^\d]/g, "");
+            const targetId = numericQ ? parseInt(numericQ, 10) : NaN;
+
+            filtered = filtered.filter((p) => {
+                const matchesName =
+                    p.name?.toLowerCase().includes(raw);
+
+                const matchesId =
+                    !Number.isNaN(targetId) &&
+                    p.item_id !== undefined &&
+                    p.item_id === targetId;
+
+                return matchesName || matchesId;
+            });
         }
-      
+
         setFilteredProducts(filtered);
-      }, [products, selectedCategory, productSearchQuery]);
-        
+    }, [products, selectedCategory, productSearchQuery]);
+
 
     // ---------------- AUTH ----------------
     useEffect(() => {
@@ -451,6 +452,11 @@ export default function EmployeeDashboard() {
             </div>
         );
     }
+    const handleLogout = async () => {
+        if (confirm('Are you sure you want to logout?')) {
+          await signOut();
+        }
+      };
 
     return (
         <div className="min-h-screen bg-gray-50 ">
@@ -468,6 +474,12 @@ export default function EmployeeDashboard() {
                                 </div>
                             )}
                             {/* Cart Icon with Badge */}
+                            <button
+                                onClick={handleLogout}
+                                className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                            >
+                                <LogOut className="h-5 w-5" />
+                            </button>
                             <button
                                 onClick={() => setTab("cart")}
                                 className="relative bg-white border border-gray-300 rounded-lg p-2 hover:bg-gray-50 transition"
