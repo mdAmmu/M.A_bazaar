@@ -5,21 +5,8 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase, Product, Order, OrderItem, Profile } from '../../lib/supabase';
 import BulkProductUpload from './BulkProductUpload';
 import { Capacitor } from '@capacitor/core';
-import { registerPlugin } from '@capacitor/core';
-import { Filesystem, Directory } from '@capacitor/filesystem';
-import { Share } from '@capacitor/share';
-import { Browser } from '@capacitor/browser';
 
 
-
-
-
-
-// Thermal receipt size: 80mm width (standard for thermal printers)
-// const THERMAL_PDF_WIDTH_MM = 80;
-// const THERMAL_PDF_MAX_HEIGHT_MM = 400;
-// const THERMAL_MARGIN_MM = 3;
-// const THERMAL_CONTENT_WIDTH_MM = THERMAL_PDF_WIDTH_MM - THERMAL_MARGIN_MM * 2;
 
 
 type Page =
@@ -317,27 +304,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
   };
 
-  // const fetchOrders = async () => {
-  //   try {
-  //     const { data, error } = await supabase
-  //       .from('orders')
-  //       .select(`
-  //         *,
-  //         profiles (name, email, phone, address),
-  //         order_items (
-  //           *,
-  //           products (*)
-  //         )
-  //       `)
-  //       .order('created_at', { ascending: false });
-
-  //     if (error) throw error;
-  //     setOrders((data as OrderWithItems[]) || []);
-  //   } catch (error) {
-  //     console.error('Error fetching orders:', error);
-  //   }
-  // };
-
+  
   const fetchOrders = async () => {
     try {
       const { data } = await supabase
@@ -547,101 +514,13 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
   };
 
-  // Around line 245-264
-  // const openProductModal = (product?: Product) => {
-  //   if (product) {
-  //     setEditingProduct(product);
-  //     setProductForm({
-  //       name: product.name,
-  //       price: product.price.toString(),
-  //       mrp: product.mrp?.toString() || '',
-  //       image_url: product.image_url,
-  //       stock: product.stock.toString(),
-  //       category: product.category || '',
-  //     });
-  //   } else {
-  //     setEditingProduct(null);
-  //     setProductForm({
-  //       name: '',
-  //       price: '',
-  //       mrp: '',
-  //       image_url: '',
-  //       stock: '',
-  //       category: '',
-  //     });
-  //   }
-  //   setShowProductModal(true);
-  // };
 
   const closeProductModal = () => {
     setShowProductModal(false);
     setEditingProduct(null);
   };
 
-  // const saveProduct = async (e: React.FormEvent) => {
-  //   e.preventDefault();
-
-  //   try {
-  //     const productData: {
-  //       name: string;
-  //       price: number;
-  //       image_url: string;
-  //       stock: number;
-  //       updated_at: string;
-  //       mrp?: number | null;
-  //       category?: string;
-  //     } = {
-  //       name: productForm.name,
-  //       price: parseFloat(productForm.price),
-  //       image_url: productForm.image_url,
-  //       stock: parseInt(productForm.stock),
-  //       updated_at: new Date().toISOString(),
-  //     };
-
-  //     // Include MRP if provided (only if column exists in database)
-  //     if (productForm.mrp && productForm.mrp.trim()) {
-  //       productData.mrp = parseFloat(productForm.mrp);
-  //     }
-
-  //     // Include category if provided (requires migration to be run)
-  //     if (productForm.category.trim()) {
-  //       productData.category = productForm.category.trim();
-  //     }
-
-  //     if (editingProduct) {
-  //       const { error } = await supabase
-  //         .from('products')
-  //         .update(productData)
-  //         .eq('id', editingProduct.id);
-
-  //       if (error) {
-  //         console.error('Error updating product:', error);
-  //         alert(`Failed to update product: ${error.message}`);
-  //         return;
-  //       }
-  //       alert('Product updated successfully!');
-  //     } else {
-  //       const { error } = await supabase
-  //         .from('products')
-  //         .insert([productData]);
-
-  //       if (error) {
-  //         console.error('Error creating product:', error);
-  //         alert(`Failed to create product: ${error.message}`);
-  //         return;
-  //       }
-  //       alert('Product created successfully!');
-  //     }
-
-  //     closeProductModal();
-  //     await fetchProducts();
-  //   } catch (error) {
-  //     console.error('Error saving product:', error);
-  //     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-  //     alert(`Failed to save product: ${errorMessage}`);
-  //   }
-  // };
-
+  
   const deleteProduct = async (id: string) => {
     // if (!confirm('Are you sure you want to delete this product?')) return;
 
@@ -1105,24 +984,24 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   };
 
 
-  const savePdfToMobile = async (base64Data: string, filename: string) => {
-    try {
-      const result = await Filesystem.writeFile({
-        path: filename,
-        data: base64Data,
-        directory: Directory.Data,
-      });
+  // const savePdfToMobile = async (base64Data: string, filename: string) => {
+  //   try {
+  //     const result = await Filesystem.writeFile({
+  //       path: filename,
+  //       data: base64Data,
+  //       directory: Directory.Data,
+  //     });
   
-      await Share.share({
-        title: 'Bill PDF',
-        url: result.uri,
-      });
+  //     await Share.share({
+  //       title: 'Bill PDF',
+  //       url: result.uri,
+  //     });
   
-    } catch (error: any) {
-      console.error(error);
-      alert('Error: ' + (error?.message || JSON.stringify(error)));
-    }
-  };
+  //   } catch (error: any) {
+  //     console.error(error);
+  //     alert('Error: ' + (error?.message || JSON.stringify(error)));
+  //   }
+  // };
   
 
   const printBillForOrder = async (order: OrderWithItems) => {
