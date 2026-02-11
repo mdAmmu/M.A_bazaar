@@ -4,7 +4,6 @@ import { jsPDF } from 'jspdf';
 import { useAuth } from '../../context/AuthContext';
 import { supabase, Product, Order, OrderItem, Profile } from '../../lib/supabase';
 import BulkProductUpload from './BulkProductUpload';
-import { Capacitor } from '@capacitor/core';
 
 
 
@@ -804,7 +803,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       const width = 80;      // 80mm thermal paper width
       const contentWidth = width - margin * 2;
 
-      const lineHeight = 4;
+      const lineHeight = 6;
       const fontSmall = 10;
       const fontNormal = 11;
       const fontTitle = 12;
@@ -878,7 +877,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       doc.text('THERMAL BILL', margin, y);
       y += lineHeight + 2;
 
-      doc.setFont("helvetica", "bold");
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(fontSmall);
       doc.text(`Bill: ${billNo}`, margin, y);
       y += lineHeight;
@@ -887,7 +886,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       doc.text(`Date: ${new Date().toLocaleString()}`, margin, y);
       y += lineHeight + 2;
 
-      doc.setFont("helvetica", "bold");
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(fontNormal);
       doc.text('Customer', margin, y);
       y += lineHeight;
@@ -930,25 +929,41 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       y += lineHeight;
 
       for (const it of order.order_items || []) {
+
         const name = safe(it.products?.name || 'Unknown');
         const nameLines = doc.splitTextToSize(name, colW[0]);
-
+      
         const qty = safe(it.quantity);
-        const price = money(it.price ?? it.products?.price ?? 0);
-        const subtotal = money(it.subtotal ?? 0);
-
+        const price = money(it.price ?? it.products?.price ?? 0, { withSymbol: false });
+        const subtotal = money(it.subtotal ?? 0, { withSymbol: false });
+      
+        // 🔹 ALWAYS set font + size before printing name
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
         doc.text(nameLines[0], margin, y);
+      
+        // 🔹 Switch back to normal for numbers
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
         doc.text(qty, margin + colW[0] + colW[1] - 1, y, { align: 'right' });
         doc.text(price, margin + colW[0] + colW[1] + colW[2] - 1, y, { align: 'right' });
         doc.text(subtotal, margin + w, y, { align: 'right' });
-
+      
         y += lineHeight;
-
+      
+        // If name wraps to next line
         for (let i = 1; i < nameLines.length; i++) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
           doc.text(nameLines[i], margin, y);
           y += lineHeight;
         }
+      
+        // 🔹 Important: Reset back to normal AFTER finishing this item
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
       }
+      
 
       y += 4;
 
@@ -959,16 +974,20 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       doc.setFont("helvetica", "bold");
       doc.text('Subtotal:', margin, y);
+      doc.setFont("helvetica", "normal");
       doc.text(money(totalAmount), margin + w, y, { align: 'right' });
       y += lineHeight;
 
       doc.setFont("helvetica", "bold");
       doc.text('Delivery:', margin, y);
+      doc.setFont("helvetica", "normal");
       doc.text(money(delivery), margin + w, y, { align: 'right' });
       y += lineHeight;
 
       doc.setFont("helvetica", "bold");
       doc.text('Discount:', margin, y);
+      doc.setFont("helvetica", "normal");
+
       doc.text(money(discount, { negative: discount > 0 }), margin + w, y, { align: 'right' });
       y += lineHeight + 1;
 
@@ -1016,72 +1035,6 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
 
   };
-
-
-
-  // const savePdfToMobile = async (base64Data: string, filename: string) => {
-  //   try {
-  //     const result = await Filesystem.writeFile({
-  //       path: filename,
-  //       data: base64Data,
-  //       directory: Directory.Data,
-  //     });
-
-  //     await Share.share({
-  //       title: 'Bill PDF',
-  //       url: result.uri,
-  //     });
-
-  //   } catch (error: any) {
-  //     console.error(error);
-  //     alert('Error: ' + (error?.message || JSON.stringify(error)));
-  //   }
-  // };
-
-
-  // const printBillForOrder = async (order: OrderWithItems) => {
-  //   if (!order?.id) return;
-  //   if (!order.order_items || order.order_items.length === 0) {
-  //     alert('Cannot print bill: order has no items');
-  //     return;
-  //   }
-
-  //   setPrintingOrderId(order.id);
-
-  //   try {
-  //     // Update stock
-  //     for (const item of order.order_items) {
-  //       const productId = item.product_id ?? item.products?.id;
-  //       if (!productId) continue;
-
-  //       const { data: product } = await supabase
-  //         .from('products')
-  //         .select('stock')
-  //         .eq('id', productId)
-  //         .maybeSingle();
-
-  //       const currentStock = product?.stock ?? 0;
-  //       const newStock = Math.max(0, currentStock - item.quantity);
-
-  //       await supabase
-  //         .from('products')
-  //         .update({ stock: newStock })
-  //         .eq('id', productId);
-  //     }
-
-  //     // ✅ billNo is defined HERE
-  //     const billNo = generateBillNumber();
-
-  //     // ✅ MUST be awaited
-  //     await saveBillAsThermalPdf(order, billNo);
-
-  //   } catch (error) {
-  //     console.error('Error printing bill:', error);
-  //     alert('Failed to print bill');
-  //   } finally {
-  //     setPrintingOrderId(null);
-  //   }
-  // };
 
 
 
