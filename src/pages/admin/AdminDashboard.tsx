@@ -967,22 +967,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     doc.text('Thank you!', margin, y);
 
     const filename = `Bill_${billNo.replace(/\s/g, '_')}.pdf`;
-    
-    if (Capacitor.getPlatform() === 'web') {
-      doc.save(filename);
-    } else {
-      const pdfBlob = doc.output('blob');
-      const url = URL.createObjectURL(pdfBlob);
-    
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;   // Forces download
-      document.body.appendChild(link);
-      link.click();
-    
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }
+
+    doc.save(filename);
     
   };
 
