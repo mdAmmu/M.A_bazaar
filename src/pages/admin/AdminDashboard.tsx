@@ -978,18 +978,14 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     // Force download in Chrome
     // ----------------------------
     const filename = `Bill_${billNo.replace(/\s/g, '_')}.pdf`;
-  
-    const blob = doc.output('blob');
-    const url = URL.createObjectURL(blob);
-  
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  
-    URL.revokeObjectURL(url);
+
+    // Mobile-safe method
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      doc.output('dataurlnewwindow'); 
+    } else {
+      doc.save(filename);
+    }
+
   };
   
 
