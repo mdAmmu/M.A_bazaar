@@ -1,9 +1,31 @@
+
+
+// ===== IMPORTS =====
 import { useEffect, useState } from "react";
-import { Package, Users, ShoppingCart, MapPin, Trash2, ArrowLeft, Minus, Plus, ChevronUp, ChevronDown, Calendar, DollarSign, Navigation, Search, LogOut } from "lucide-react";
+import {
+    Package,
+    Users,
+    ShoppingCart,
+    MapPin,
+    Trash2,
+    ArrowLeft,
+    Minus,
+    Plus,
+    ChevronUp,
+    ChevronDown,
+    Calendar,
+    Navigation,
+    Search,
+    LogOut
+} from "lucide-react";
+
 import { supabase, Product } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
+import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
+import { AppLauncher } from "@capacitor/app-launcher";
 
-// ---------------- TYPES ----------------
+// ===== TYPES =====
 type Customer = {
     id: string;
     name: string;
@@ -23,6 +45,8 @@ type OrderWithItems = {
     id: string;
     total_amount: number;
     final_amount: number;
+    delivery_charge: number;
+    discount_amount: number;
     status: string;
     created_at: string;
     customer_id: string;
@@ -32,71 +56,72 @@ type OrderWithItems = {
         quantity: number;
         price: number;
         subtotal: number;
-        delivery_charge: number;
         products: Product;
     }>;
 };
 
-// ---------------- COMPONENT ----------------
+// ===== COMPONENT =====
 export default function EmployeeDashboard() {
     const { profile, signOut } = useAuth();
+
     const [tab, setTab] = useState<"products" | "customers" | "orders" | "cart">("products");
     const [employeeId, setEmployeeId] = useState<string | null>(null);
 
     const [products, setProducts] = useState<Product[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
+    const [orders, setOrders] = useState<OrderWithItems[]>([]);
     const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
 
     const [cart, setCart] = useState<CartItem[]>([]);
-    const [orders, setOrders] = useState<OrderWithItems[]>([]);
     const [loading, setLoading] = useState(true);
-    
 
-    // New customer form
+    // ----- Customer Form -----
     const [name, setName] = useState("");
     const [phone, setPhone] = useState("");
     const [address, setAddress] = useState("");
     const [lat, setLat] = useState<number | null>(null);
     const [lng, setLng] = useState<number | null>(null);
-    const [locationStatus, setLocationStatus] = useState<string>("");
+    const [locationStatus, setLocationStatus] = useState("");
     const [addingCustomer, setAddingCustomer] = useState(false);
     const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
+
     const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+
     const [customerSearchQuery, setCustomerSearchQuery] = useState("");
     const [productSearchQuery, setProductSearchQuery] = useState("");
+
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
     const [categories, setCategories] = useState<string[]>([]);
+    const [discount, setDiscount] = useState(0);
 
 
-    // ---------------- CATEGORIES ----------------
+    // ===== CATEGORY FILTER =====
     useEffect(() => {
-        const categories = Array.from(
+        const cats = Array.from(
             new Set(products.map((p) => p.category).filter((c): c is string => Boolean(c)))
         ).sort();
-        setCategories(categories);
+
+        setCategories(cats);
     }, [products]);
 
     useEffect(() => {
         let filtered = products;
 
-        // ✅ Category filter
         if (selectedCategory) {
             filtered = filtered.filter(
-                (p) =>
-                    p.category?.toLowerCase() === selectedCategory.toLowerCase()
+                (p) => p.category?.toLowerCase() === selectedCategory.toLowerCase()
             );
         }
 
-        // ✅ Search (Item ID OR Name)
         const raw = productSearchQuery.trim().toLowerCase();
+
         if (raw) {
             const numericQ = raw.replace(/[^\d]/g, "");
             const targetId = numericQ ? parseInt(numericQ, 10) : NaN;
 
             filtered = filtered.filter((p) => {
-                const matchesName =
-                    p.name?.toLowerCase().includes(raw);
+                const matchesName = p.name?.toLowerCase().includes(raw);
 
                 const matchesId =
                     !Number.isNaN(targetId) &&
@@ -110,8 +135,7 @@ export default function EmployeeDashboard() {
         setFilteredProducts(filtered);
     }, [products, selectedCategory, productSearchQuery]);
 
-
-    // ---------------- AUTH ----------------
+    // ===== AUTH =====
     useEffect(() => {
         const getUser = async () => {
             const { data } = await supabase.auth.getUser();
@@ -120,7 +144,7 @@ export default function EmployeeDashboard() {
         getUser();
     }, []);
 
-    // ---------------- FETCH DATA ----------------
+    // ===== FETCH DATA =====
     useEffect(() => {
         if (employeeId) {
             fetchProducts();
@@ -128,7 +152,6 @@ export default function EmployeeDashboard() {
             fetchOrders();
             setLoading(false);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [employeeId]);
 
     const toggleOrder = (orderId: string) => {
@@ -140,181 +163,120 @@ export default function EmployeeDashboard() {
     };
 
     const fetchProducts = async () => {
-        try {
-            const { data, error } = await supabase
-                .from("products")
-                .select("*")
-                .order("created_at", { ascending: false });
-            if (error) throw error;
-            setProducts(data || []);
-        } catch (error) {
-            console.error("Error fetching products:", error);
-        }
+        const { data } = await supabase.from("products").select("*");
+        setProducts(data || []);
     };
 
     const fetchCustomers = async () => {
         if (!employeeId) return;
-        try {
-            const { data, error } = await supabase
-                .from("customers")
-                .select("*")
-                .eq("employee_id", employeeId)
-                .order("created_at", { ascending: false });
 
-            if (error) {
-                console.error("Error fetching customers:", error);
-                throw error;
-            }
-            setCustomers(data || []);
-        } catch (error) {
-            console.error("Error fetching customers:", error);
-            // Optionally show an error to the user
-        }
+        const { data } = await supabase
+            .from("customers")
+            .select("*")
+            .eq("employee_id", employeeId)
+            .order("created_at", { ascending: false });
+
+        setCustomers(data || []);
     };
 
     const fetchOrders = async () => {
         if (!employeeId) return;
-        try {
-            const { data, error } = await supabase
-                .from("orders")
-                .select(`
-          *,
-          customers (*),
-          order_items (
-            id,
-            quantity,
-            price,
-            subtotal,
-            products (*)
-          )
-        `)
-                .eq("employee_id", employeeId)
-                .order("created_at", { ascending: false });
-            if (error) throw error;
-            setOrders((data as OrderWithItems[]) || []);
-        } catch (error) {
-            console.error("Error fetching orders:", error);
-        }
+
+        const { data } = await supabase
+            .from("orders")
+            .select(`
+        *,
+        customers (*),
+        order_items (
+          id,
+          quantity,
+          price,
+          subtotal,
+          products (*)
+        )
+      `)
+            .eq("employee_id", employeeId)
+            .order("created_at", { ascending: false });
+
+        setOrders((data as OrderWithItems[]) || []);
     };
 
-    // ---------------- LOCATION ----------------
-    const setCurrentLocation = () => {
+    // ===== LOCATION =====
+    const setCurrentLocation = async () => {
         setLocationStatus("Getting location...");
-        if (!navigator.geolocation) {
-            setLocationStatus("Geolocation is not supported by your browser");
-            return;
-        }
 
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                setLat(pos.coords.latitude);
-                setLng(pos.coords.longitude);
-                setLocationStatus("Location captured successfully!");
-                setTimeout(() => setLocationStatus(""), 3000);
-            },
-            (error) => {
-                setLocationStatus(`Error: ${error.message}`);
-                setTimeout(() => setLocationStatus(""), 3000);
+        try {
+            if (Capacitor.isNativePlatform()) {
+                await Geolocation.requestPermissions();
+                const position = await Geolocation.getCurrentPosition();
+
+                setLat(position.coords.latitude);
+                setLng(position.coords.longitude);
+            } else {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    setLat(pos.coords.latitude);
+                    setLng(pos.coords.longitude);
+                });
             }
-        );
+
+            setLocationStatus("Location captured successfully!");
+            setTimeout(() => setLocationStatus(""), 3000);
+        } catch (e: any) {
+            setLocationStatus(e.message);
+        }
     };
 
-    // ---------------- CUSTOMER ----------------
+    // ===== CUSTOMER =====
     const addCustomer = async () => {
-        if (!employeeId) {
-            alert("Employee ID not found. Please log in again.");
-            return;
-        }
-        if (!name.trim() || !phone.trim() || !address.trim()) {
-            alert("Please fill in all required fields");
-            return;
-        }
+        if (!employeeId) return;
 
         setAddingCustomer(true);
-        try {
-            // Insert and return the created customer in one operation
-            const { data, error } = await supabase
-                .from("customers")
-                .insert([
-                    {
-                        name: name.trim(),
-                        phone: phone.trim(),
-                        address: address.trim(),
-                        latitude: lat,
-                        longitude: lng,
-                        employee_id: employeeId,
-                    },
-                ])
-                .select()  // This returns the inserted row(s)
-                .single(); // Get the single inserted row
 
-            if (error) {
-                console.error("Supabase error:", error);
-                alert(`Failed to add customer: ${error.message}`);
-                return;
-            }
+        const { data } = await supabase
+            .from("customers")
+            .insert([
+                {
+                    name,
+                    phone,
+                    address,
+                    latitude: lat,
+                    longitude: lng,
+                    employee_id: employeeId
+                }
+            ])
+            .select()
+            .single();
 
-            if (!data) {
-                alert("Customer was created but could not be retrieved. Please refresh the page.");
-                return;
-            }
-
-            // Reset form
+        if (data) {
+            setActiveCustomer(data);
+            setCustomerTab("existing");
             setName("");
             setPhone("");
             setAddress("");
             setLat(null);
             setLng(null);
-            setLocationStatus("");
 
-            // Refresh customers list
             await fetchCustomers();
-
-            // Use the returned data directly
-            setActiveCustomer(data);
-            setTab("products");
-            alert("Customer added successfully!");
-        } catch (error) {
-            console.error("Error adding customer:", error);
-            const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-            alert(`Failed to add customer: ${errorMessage}`);
-        } finally {
-            setAddingCustomer(false);
         }
+
+        setAddingCustomer(false);
     };
 
-
-
-    const selectCustomer = (customer: Customer) => {
-        setActiveCustomer(customer);
+    const selectCustomer = (c: Customer) => {
+        setActiveCustomer(c);
         setTab("products");
     };
 
-    const deleteCustomer = async (customerId: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (!window.confirm("Are you sure you want to delete this customer?")) return;
-        try {
-            const { error } = await supabase.from("customers").delete().eq("id", customerId);
-            if (error) throw error;
-            if (activeCustomer?.id === customerId) setActiveCustomer(null);
-            await fetchCustomers();
-        } catch (err) {
-            console.error("Error deleting customer:", err);
-            alert("Failed to delete customer.");
-        }
-    };
-
-    // ---------------- CART ----------------
+    // ===== CART =====
     const addToCart = (product: Product) => {
         if (!activeCustomer) {
-            alert("Please select a customer first from the Customers page");
             setTab("customers");
             return;
         }
 
         setCart((prev) => {
-            const existing = prev.find((p) => p.product.id === product.id);
-            if (existing) {
+            const exist = prev.find((p) => p.product.id === product.id);
+            if (exist) {
                 return prev.map((p) =>
                     p.product.id === product.id ? { ...p, qty: p.qty + 1 } : p
                 );
@@ -325,6 +287,7 @@ export default function EmployeeDashboard() {
 
     const updateQty = (id: string, qty: number) => {
         if (qty < 1) return;
+
         setCart((prev) =>
             prev.map((p) => (p.product.id === id ? { ...p, qty } : p))
         );
@@ -334,130 +297,127 @@ export default function EmployeeDashboard() {
         setCart((prev) => prev.filter((p) => p.product.id !== id));
     };
 
-    const totalAmount = cart.reduce(
-        (sum, i) => sum + i.qty * i.product.price,
-        0
-    );
-
-    // ---------------- ORDER ---------------- 
+    const totalAmount = cart.reduce((s, i) => s + i.qty * i.product.price, 0);
     const deliveryCharge = 20;
-    const finalAmount = totalAmount + deliveryCharge;
+    const finalTotal = Math.max(totalAmount - discount, 0);
 
+
+    // const placeOrder = async () => {
+    //     console.log("Place order clicked");
+
+    //     if (!employeeId) {
+    //         console.log("Missing employeeId");
+    //         return;
+    //     }
+
+    //     if (!activeCustomer) {
+    //         console.log("Missing activeCustomer");
+    //         return;
+    //     }
+
+    //     if (cart.length === 0) {
+    //         console.log("Cart is empty");
+    //         return;
+    //     }
+
+    //     console.log("All validations passed");
+
+
+    // }
+    // ===== PLACE ORDER =====
     const placeOrder = async () => {
-        if (!employeeId || !activeCustomer || cart.length === 0) {
-            alert("Please select a customer and add items to cart");
+        if (!employeeId || !activeCustomer || cart.length === 0) return;
+
+        // Ensure discount is valid number
+        const discountAmount = Number(discount) || 0;
+
+        // Calculate subtotal from cart (safe way)
+        const subtotal = cart.reduce(
+            (sum, item) => sum + item.qty * item.product.price,
+            0
+        );
+
+        // Calculate final amount (prevent negative)
+        const calculatedFinalAmount = Math.max(
+            subtotal + deliveryCharge - discountAmount,
+            0
+        );
+
+        // Insert Order
+        console.log("Inserting order...");
+
+        const response = await supabase
+            .from("orders")
+            .insert([
+                {
+                    employee_id: employeeId,
+                    customer_id: activeCustomer.id,
+                    total_amount: subtotal,
+                    delivery_charge: deliveryCharge,
+                    discount_amount: discountAmount,
+                    final_amount: calculatedFinalAmount,
+                    status: "pending"
+                }
+            ])
+            .select()
+            .single();
+
+        console.log("Supabase response:", response);
+
+        const { data: order, error } = response;
+
+        if (error) {
+            console.error("Order insert error:", error);
+            alert(error.message);
             return;
         }
 
-        try {
-            // Create order
-            const { data: order, error: orderError } = await supabase
-                .from("orders")
-                .insert([
-                    {
-                        employee_id: employeeId,
-                        customer_id: activeCustomer.id,
-                        total_amount: totalAmount,
-                        delivery_charge: deliveryCharge,
-                        discount: 0,
-                        final_amount: finalAmount,
-                        status: "pending",
-                    },
-                ])
-                .select()
-                .single();
+        if (!order) {
+            console.error("No order returned");
+            return;
+        }
 
-            if (orderError) throw orderError;
 
-            // Create order items
-            const orderItems = cart.map((c) => ({
+        // Insert Order Items
+        await supabase.from("order_items").insert(
+            cart.map((c) => ({
                 order_id: order.id,
                 product_id: c.product.id,
                 quantity: c.qty,
                 price: c.product.price,
-                subtotal: c.qty * c.product.price,
-            }));
-
-            const { error: itemsError } = await supabase
-                .from("order_items")
-                .insert(orderItems);
-
-            if (itemsError) throw itemsError;
-
-            // Clear cart and reset
-            setCart([]);
-            // Don't clear active customer - they might want to place another order
-            await fetchOrders();
-
-            // Navigate to orders tab to show the new order
-            setTab("orders");
-            alert("Order placed successfully!");
-
-        } catch (error) {
-            console.error("Error placing order:", error);
-            const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-            const errorCode = (error as { code?: string })?.code || "";
-            alert(`Failed to place order: ${errorMessage}\n\nError Code: ${errorCode}\n\nIf you see "row-level security policy", please run the FIX_ORDER_RLS.sql file in Supabase Dashboard.`);
-        }
-    };
-
-    // delete order button function
-    const deleteOrder = async (orderId: string) => {
-        const isConfirmed = window.confirm(
-            'Are you sure you want to delete this order? This action cannot be undone and will also delete all order items.'
+                subtotal: c.qty * c.product.price
+            }))
         );
-        if (!isConfirmed) return;
 
-        try {
-            // Delete order items first (due to foreign key constraint)
-            const { error: itemsError } = await supabase
-                .from('order_items')
-                .delete()
-                .eq('order_id', orderId);
-
-            if (itemsError) {
-                console.error('Error deleting order items:', itemsError);
-                alert(`Failed to delete order items: ${itemsError.message}`);
-                return;
-            }
-
-            // Then delete the order
-            const { error: orderError } = await supabase
-                .from('orders')
-                .delete()
-                .eq('id', orderId);
-
-            if (orderError) {
-                console.error('Error deleting order:', orderError);
-                alert(`Failed to delete order: ${orderError.message}`);
-                return;
-            }
-
-            await fetchOrders();
-            await calculateStats();
-            // alert('Order deleted successfully');
-        } catch (err) {
-            console.error('Error deleting order:', err);
-            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-            alert(`Failed to delete order: ${errorMessage}`);
-        }
+        // Reset
+        setCart([]);
+        setDiscount(0); // reset discount
+        await fetchOrders();
+        setTab("orders");
     };
 
 
-    // ---------------- UI ----------------
+    // ===== DELETE ORDER =====
+    const deleteOrder = async (orderId: string) => {
+        await supabase.from("order_items").delete().eq("order_id", orderId);
+        await supabase.from("orders").delete().eq("id", orderId);
+        await fetchOrders();
+    };
+
+    // ===== LOADING =====
     if (loading) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="min-h-screen flex items-center justify-center">
+                Loading...
             </div>
         );
     }
-    const handleLogout = async () => {
-        if (confirm('Are you sure you want to logout?')) {
-          await signOut();
-        }
-      };
 
+    const handleLogout = async () => {
+        if (confirm("Logout?")) await signOut();
+    };
+
+    // ===== UI =====
     return (
         <div className="min-h-screen bg-gray-50 ">
             {/* Header */}
@@ -496,9 +456,9 @@ export default function EmployeeDashboard() {
                 </div>
             </div>
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
                 {/* Tabs */}
-                <div className="bg-white rounded-xl shadow-md mb-6">
+                <div className="rounded-xl shadow-md mb-3  z-30 ">
                     <div className="flex overflow-x-auto whitespace-nowrap border-b border-gray-200 scrollbar-hide">
                         <button
                             onClick={() => setTab("products")}
@@ -564,7 +524,7 @@ export default function EmployeeDashboard() {
                         )}
 
                         {products.length > 0 && (
-                            <div className="relative mb-4">
+                            <div className=" mb-4 sticky top-[92px] z-20 bg-white">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                 <input
                                     type="text"
@@ -577,7 +537,7 @@ export default function EmployeeDashboard() {
                         )}
                         {/* Categories Section */}
                         {categories.length > 0 && (
-                            <div className="w-full overflow-x-auto">
+                            <div className="w-full overflow-x-auto sticky top-[135px] z-20 bg-white max-w-full">
                                 <div className="flex gap-3 whitespace-nowrap px-2 py-3">
                                     <button
                                         onClick={() => setSelectedCategory(null)}
@@ -776,10 +736,38 @@ export default function EmployeeDashboard() {
                                                             </button>
                                                             {customer.latitude != null && customer.longitude != null && (
                                                                 <button
-                                                                    onClick={(e) => {
+                                                                    onClick={async (e) => {
                                                                         e.stopPropagation();
-                                                                        const url = `https://www.google.com/maps?q=${customer.latitude},${customer.longitude}`;
-                                                                        window.open(url, "_blank", "noopener,noreferrer");
+
+                                                                        try {
+
+                                                                            const lat = customer.latitude;
+                                                                            const lng = customer.longitude;
+
+                                                                            if (!lat || !lng) {
+                                                                                alert("Location not saved for this customer");
+                                                                                return;
+                                                                            }
+
+                                                                            // 👉 If running inside APK / Mobile
+                                                                            if (Capacitor.isNativePlatform()) {
+
+                                                                                const url = `geo:${lat},${lng}?q=${lat},${lng}`;
+                                                                                await AppLauncher.openUrl({ url });
+
+                                                                            }
+
+                                                                            // 👉 If running in browser
+                                                                            else {
+
+                                                                                const url = `https://www.google.com/maps?q=${lat},${lng}`;
+                                                                                window.open(url, "_blank", "noopener,noreferrer");
+
+                                                                            }
+
+                                                                        } catch (error) {
+                                                                            console.error("Map open error:", error);
+                                                                        }
                                                                     }}
                                                                     className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition text-sm font-medium"
                                                                     title="Open location in Google Maps"
@@ -1001,10 +989,22 @@ export default function EmployeeDashboard() {
                                                 <span className="text-gray-600">Items</span>
                                                 <span className="font-semibold">{cart.length}</span>
                                             </div>
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="text-gray-600">Discount</span>
+                                                <input
+                                                    type="number"
+                                                    value={discount}
+                                                    onChange={(e) => setDiscount(Number(e.target.value))}
+                                                    className="w-24 border rounded px-2 py-1 text-right"
+                                                    min="0"
+                                                    max={totalAmount}
+                                                />
+                                            </div>
+
                                             <div className="border-t pt-3 flex justify-between">
                                                 <span className="text-lg font-semibold text-gray-900">Total</span>
                                                 <span className="text-2xl font-bold text-blue-600">
-                                                    ₹{totalAmount.toFixed(2)}
+                                                    ₹{finalTotal.toFixed(2)}
                                                 </span>
                                             </div>
                                         </div>
@@ -1165,7 +1165,10 @@ export default function EmployeeDashboard() {
                                                             <span>Delivery</span>
                                                             <span>₹{(order.delivery_charge ?? 0).toFixed(2)}</span>
                                                         </div>
-
+                                                        <div className="flex justify-between text-red-600">
+                                                            <span>Discount</span>
+                                                            <span>-₹{(order.discount_amount ?? 0).toFixed(2)}</span>
+                                                        </div>
                                                         <div className="flex justify-between font-semibold text-lg text-blue-600 pt-2 border-t">
                                                             <span>Total</span>
                                                             <span>

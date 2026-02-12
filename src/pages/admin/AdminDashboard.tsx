@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { Package, ShoppingCart, LogOut, Edit, Trash2, Plus, X, Users, CreditCard, BarChart3, TrendingUp, Upload, Printer, ReceiptText } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Package, ShoppingCart, LogOut, Edit, Trash2, Plus, X, Users, CreditCard, BarChart3, TrendingUp, Upload, Printer, ReceiptText, Search } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { useAuth } from '../../context/AuthContext';
 import { supabase, Product, Order, OrderItem, Profile } from '../../lib/supabase';
 import BulkProductUpload from './BulkProductUpload';
+import CustomerBalance from "../admin/CustomerBalance";
 
 
 
@@ -42,7 +43,7 @@ interface DailySales {
   sales: number;
 }
 
-type AdminTab = 'overview' | 'products' | 'orders' | 'bills' | 'users' | 'customers' | 'payments' | 'analytics';
+type AdminTab = 'overview' | 'products' | 'orders' | 'bills' | 'users' | 'customers' | 'payments' | 'analytics' | 'customer-balance';
 
 export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const { profile, signOut } = useAuth();
@@ -92,7 +93,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [imagePreview, setImagePreview] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+  const [productSearchQuery, setProductSearchQuery] = useState("");
 
 
 
@@ -109,31 +110,6 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
   }, [activeTab]);
 
-  // to filter the product by category
-
-
-
-  useEffect(() => {
-    let filtered = products;
-
-    // Apply category filter
-    if (selectedCategory) {
-      filtered = filtered.filter(
-        (product) => product.category?.toLowerCase() === selectedCategory.toLowerCase()
-      );
-    }
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      filtered = filtered.filter(
-        (product) =>
-          product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          product.description.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    setFilteredProducts(filtered);
-  }, [searchQuery, selectedCategory, products]);
 
   const categories = Array.from(
     new Set(products.map((p) => p.category).filter((c): c is string => Boolean(c)))
@@ -702,7 +678,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     }
     const subtotal = editingOrderItems.reduce((sum, item) => sum + item.subtotal, 0);
     const deliveryCharge = editingOrder.delivery_charge || 0;
-    const discount = editingOrder.discount || 0;
+    const discount = editingOrder.discount_amount || 0;
     const finalAmount = subtotal + deliveryCharge - discount;
     return { subtotal, deliveryCharge, discount, finalAmount };
   };
@@ -752,6 +728,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         .from('orders')
         .update({
           total_amount: subtotal,
+          discount_amount: editingOrder.discount_amount || 0,
           final_amount: finalAmount,
         })
         .eq('id', editingOrder.id);
@@ -791,12 +768,17 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     try {
       const safe = (v: unknown) => String(v ?? '').trim();
 
-      const money = (value: unknown, opts?: { negative?: boolean }) => {
+      const money = (
+        value: unknown,
+        opts?: { negative?: boolean; withSymbol?: boolean }
+      ) => {
         const n = Number(value ?? 0);
         const abs = Math.abs(Number.isFinite(n) ? n : 0);
-        const prefix = opts?.negative ? '-' : '';
-        return `${prefix}Rs. ${abs.toFixed(2)}`;
+        const prefix = opts?.negative ? '--' : '';
+        const symbol = opts?.withSymbol === false ? '' : 'Rs. ';
+        return `${prefix}${symbol}${abs.toFixed(2)}`;
       };
+
 
       // ✅ Define these properly
       const margin = 5;      // 5mm margin
@@ -804,6 +786,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       const contentWidth = width - margin * 2;
 
       const lineHeight = 6;
+      const lineHeight1 = 4;
       const fontSmall = 10;
       const fontNormal = 11;
       const fontTitle = 12;
@@ -858,7 +841,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       addLine(8);
 
-      const finalHeight = y + margin;
+      const finalHeight = y + margin + 10;
 
       // ----------------------------
       // Create actual PDF
@@ -871,11 +854,28 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       y = margin;
       const w = contentWidth;
+      const centerX = width / 2;
 
+      y += lineHeight + 4;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(fontTitle);
-      doc.text('THERMAL BILL', margin, y);
+      doc.text("M.A Bazaar", centerX, y, { align: "center" });
       y += lineHeight + 2;
+
+      // ===== ADDRESS =====
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(fontSmall);
+      doc.text("Itwara Bazar, Bhusar Lane,", centerX, y, { align: "center" });
+      y += lineHeight1;
+
+      doc.text("Near Bharat Medical,", centerX, y, { align: "center" });
+      y += lineHeight1;
+
+      doc.text("Nanded - 431604", centerX, y, { align: "center" });
+      y += lineHeight1;
+
+      doc.text("Mobile: 9890850160,7758846111", centerX, y, { align: "center" });
+      y += lineHeight + 3;
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(fontSmall);
@@ -932,25 +932,25 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
         const name = safe(it.products?.name || 'Unknown');
         const nameLines = doc.splitTextToSize(name, colW[0]);
-      
+
         const qty = safe(it.quantity);
         const price = money(it.price ?? it.products?.price ?? 0, { withSymbol: false });
         const subtotal = money(it.subtotal ?? 0, { withSymbol: false });
-      
+
         // 🔹 ALWAYS set font + size before printing name
         doc.setFont("helvetica", "bold");
         doc.setFontSize(9);
         doc.text(nameLines[0], margin, y);
-      
+
         // 🔹 Switch back to normal for numbers
         doc.setFont("helvetica", "normal");
         doc.setFontSize(9);
         doc.text(qty, margin + colW[0] + colW[1] - 1, y, { align: 'right' });
         doc.text(price, margin + colW[0] + colW[1] + colW[2] - 1, y, { align: 'right' });
         doc.text(subtotal, margin + w, y, { align: 'right' });
-      
+
         y += lineHeight;
-      
+
         // If name wraps to next line
         for (let i = 1; i < nameLines.length; i++) {
           doc.setFont("helvetica", "bold");
@@ -958,18 +958,18 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           doc.text(nameLines[i], margin, y);
           y += lineHeight;
         }
-      
+
         // 🔹 Important: Reset back to normal AFTER finishing this item
         doc.setFont("helvetica", "normal");
         doc.setFontSize(9);
       }
-      
+
 
       y += 4;
 
       const totalAmount = Number(order.total_amount || 0);
       const delivery = Number((order as any).delivery_charge ?? 0);
-      const discount = Number(order.discount || 0);
+      const discount = Number(order.discount_amount || 0);
       const final = Number(order.final_amount || 0);
 
       doc.setFont("helvetica", "bold");
@@ -1003,7 +1003,11 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(fontNormal);
-      doc.text('Thank you!', margin, y);
+      doc.text('Thank you!', doc.internal.pageSize.getWidth() / 2, y, {
+        align: 'center'
+      });
+      y += lineHeight1 + 15;
+
 
       // ----------------------------
       // UNIVERSAL DOWNLOAD (Mobile + Desktop)
@@ -1036,6 +1040,20 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
   };
 
+  const filteredProducts = useMemo(() => {
+    const search = productSearchQuery.toLowerCase().trim();
+
+    return products.filter((product) => {
+      const matchesSearch =
+        product.name?.toLowerCase().includes(search) ||
+        product.id?.toString().includes(search);
+
+      const matchesCategory =
+        selectedCategory === null || product.category === selectedCategory;
+
+      return matchesSearch && matchesCategory;
+    });
+  }, [products, productSearchQuery, selectedCategory]);
 
 
   if (loading) {
@@ -1157,6 +1175,17 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             <BarChart3 className="h-4 w-4" />
             <span>Analytics</span>
           </button>
+          <button
+            onClick={() => setActiveTab('customer-balance')}
+            className={`px-4 py-2 rounded-lg flex items-center gap-2 ${activeTab === 'customer-balance'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+          >
+            <CreditCard size={18} />
+            Customer Balance
+          </button>
+
         </div>
 
         {activeTab === 'overview' && (
@@ -1349,6 +1378,21 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               </div>
             </div>
 
+            <div className='w-full'>
+              {products.length > 0 && (
+                <div className=" mb-4 sticky top-[92px] z-20 bg-white">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by Item ID..."
+                    value={productSearchQuery}
+                    onChange={(e) => setProductSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              )}
+            </div>
+
             <div>
               {/* Categories Section */}
               {categories.length > 0 && (
@@ -1381,64 +1425,76 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {filteredProducts.map((product) => (
-                <div
-                  key={product.id}
-                  className="bg-white rounded-xl shadow-md overflow-hidden"
-                >
-                  {/* Image Div */}
-                  <div className="w-full h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
-                    <img
-                      src={product.image_url}
-                      alt={product.name}
-                      loading="lazy"
-                      decoding="async"
-                      width="300"
-                      height="300"
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                  <div className="p-4">
-                    {/* Product Name */}
-                    <h3 className="font-semibold text-gray-900 mb-2">
-                      {product.name}
-                    </h3>
+              {filteredProducts.length === 0 ? (
+                <p className="col-span-full text-center text-gray-500">
+                  No products found
+                </p>
+              ) : (
+                filteredProducts.map((product) => (
+                  <div
+                    key={product.id}
+                    className="bg-white rounded-xl shadow-md overflow-hidden"
+                  >
+                    {/* Image Div */}
+                    <div className="w-full h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
+                      <img
+                        src={product.image_url}
+                        alt={product.name}
+                        loading="lazy"
+                        decoding="async"
+                        width="300"
+                        height="300"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
 
-                    {/* Price and MRP Row */}
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-lg font-bold text-blue-600">
-                        ₹{product.price.toFixed(2)}
-                      </p>
-                      {product.mrp && (
+                    <div className="p-4">
+                      {/* Product Name */}
+                      <h3 className="font-semibold text-gray-900 mb-2">
+                        {product.name}
+                      </h3>
+
+                      {/* Price + MRP */}
+                      <div className="flex items-center justify-between mb-2">
                         <p className="text-lg font-bold text-blue-600">
-                          Mrp: ₹{product.mrp.toFixed(2)}
+                          ₹{product.price.toFixed(2)}
                         </p>
-                      )}
-                    </div>
 
-                    <p className="text-sm text-gray-600 mb-4">
-                      Stock: {product.stock}
-                    </p>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => openProductModal(product)}
-                        className="flex-1 flex items-center justify-center space-x-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition"
-                      >
-                        <Edit className="h-4 w-4" />
-                        <span>Edit</span>
-                      </button>
-                      <button
-                        onClick={() => deleteProduct(product.id)}
-                        className="flex-1 flex items-center justify-center space-x-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        <span>Delete</span>
-                      </button>
+                        {product.mrp && (
+                          <p className="text-lg font-bold text-blue-600">
+                            Mrp: ₹{product.mrp.toFixed(2)}
+                          </p>
+                        )}
+                      </div>
+
+                      <p className="text-sm text-gray-600 mb-4">
+                        Stock: {product.stock}
+                      </p>
+
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => openProductModal(product)}
+                          className="flex-1 flex items-center justify-center space-x-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition"
+                        >
+                          <Edit className="h-4 w-4" />
+                          <span>Edit</span>
+                        </button>
+
+                        <button
+                          onClick={() => deleteProduct(product.id)}
+                          className="flex-1 flex items-center justify-center space-x-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
+
+
           </div>
         )}
 
@@ -1635,7 +1691,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           <div className="flex justify-between text-sm">
                             <span>Discount</span>
                             <span className="text-green-600">
-                              -₹{(order.discount || 0).toFixed(2)}
+                              -₹{(order.discount_amount ?? 0).toFixed(2)}
                             </span>
                           </div>
                           <div className="flex justify-between font-bold">
@@ -2009,6 +2065,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </div>
           </div>
         )}
+        {activeTab === 'customer-balance' && <CustomerBalance />}
+
       </div>
 
       {showEditOrderModal && editingOrder && (
