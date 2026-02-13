@@ -30,8 +30,8 @@ type CustomerWithBalance = Customer & {
   balance: number;
 };
 
-/* ✅ Ledger Entry Type */
 type LedgerEntry = {
+  id: string;
   type: "order" | "payment";
   amount: number;
   created_at: string;
@@ -42,10 +42,14 @@ export default function CustomerBalance() {
   const [customers, setCustomers] = useState<CustomerWithBalance[]>([]);
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerWithBalance | null>(null);
-  const [ledgerOrders, setLedgerOrders] = useState<Order[]>([]);
-  const [ledgerPayments, setLedgerPayments] = useState<Payment[]>([]);
+
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState("");
 
   useEffect(() => {
     fetchCustomerBalances();
@@ -88,59 +92,23 @@ export default function CustomerBalance() {
     const { data: orders } = await supabase
       .from("orders")
       .select("*")
-      .eq("customer_id", customer.id)
-      .order("created_at", { ascending: true });
+      .eq("customer_id", customer.id);
 
     const { data: payments } = await supabase
       .from("payments")
       .select("*")
-      .eq("customer_id", customer.id)
-      .order("created_at", { ascending: true });
+      .eq("customer_id", customer.id);
 
-    setLedgerOrders(orders || []);
-    setLedgerPayments(payments || []);
-  };
-
-  const addPayment = async () => {
-    if (!selectedCustomer) return;
-
-    if (!paymentAmount || Number(paymentAmount) <= 0) {
-      alert("Enter valid amount");
-      return;
-    }
-
-    const { error } = await supabase.from("payments").insert([
-      {
-        customer_id: selectedCustomer.id,
-        amount: Number(paymentAmount),
-        payment_method: paymentMethod,
-      },
-    ]);
-
-    if (error) {
-      alert("Error saving payment");
-      return;
-    }
-
-    setPaymentAmount("");
-    setPaymentMethod("");
-
-    await openLedger(selectedCustomer);
-    await fetchCustomerBalances();
-  };
-
-  const renderLedger = () => {
-    if (!selectedCustomer) return null;
-
-    /* ✅ Typed Combined Ledger */
     const combined: LedgerEntry[] = [
-      ...ledgerOrders.map((o) => ({
-        type: "order" as const,
+      ...(orders || []).map((o) => ({
+        id: o.id,
+        type: "order",
         amount: o.final_amount,
         created_at: o.created_at,
       })),
-      ...ledgerPayments.map((p) => ({
-        type: "payment" as const,
+      ...(payments || []).map((p) => ({
+        id: p.id,
+        type: "payment",
         amount: p.amount,
         created_at: p.created_at,
         method: p.payment_method,
@@ -151,139 +119,212 @@ export default function CustomerBalance() {
         new Date(b.created_at).getTime()
     );
 
+    setLedgerEntries(combined);
+  };
+
+  const addPayment = async () => {
+    if (!selectedCustomer || !paymentAmount) return;
+
+    await supabase.from("payments").insert([
+      {
+        customer_id: selectedCustomer.id,
+        amount: Number(paymentAmount),
+        payment_method: paymentMethod,
+      },
+    ]);
+
+    setPaymentAmount("");
+    setPaymentMethod("");
+
+    await openLedger(selectedCustomer);
+    await fetchCustomerBalances();
+  };
+
+  const handleDelete = async (id: string) => {
+    await supabase.from("payments").delete().eq("id", id);
+    setLedgerEntries((prev) => prev.filter((e) => e.id !== id));
+    await fetchCustomerBalances();
+  };
+
+  const handleEditSave = async (id: string) => {
+    await supabase
+      .from("payments")
+      .update({ amount: Number(editAmount) })
+      .eq("id", id);
+
+    setLedgerEntries((prev) =>
+      prev.map((e) =>
+        e.id === id ? { ...e, amount: Number(editAmount) } : e
+      )
+    );
+
+    setEditId(null);
+    setEditAmount("");
+    await fetchCustomerBalances();
+  };
+
+  const renderLedger = () => {
+    if (!selectedCustomer) return null;
+
     let runningBalance = 0;
 
     return (
-      <div className="bg-white shadow rounded-lg p-6">
-        <div className="flex justify-between items-center mb-6">
-          <button
-            onClick={() => setSelectedCustomer(null)}
-            className="bg-gray-600 text-white px-4 py-2 rounded"
-          >
-            ← Back
-          </button>
-
-          <h3 className="text-xl font-bold">
-            {selectedCustomer.name} - Ledger
-          </h3>
-        </div>
-
-        <div className="space-y-2">
-          {combined.map((entry, index) => {
-            if (entry.type === "order") {
-              runningBalance += entry.amount;
-            } else {
-              runningBalance -= entry.amount;
-            }
-
-            return (
-              <div
-                key={index}
-                className="flex justify-between border-b pb-2 text-sm"
-              >
-                <div>
-                  {new Date(entry.created_at).toLocaleDateString()} -{" "}
-                  {entry.type === "order" ? (
-                    "Order"
-                  ) : (
-                    <>
-                      Payment{" "}
-                      <span className="text-gray-500 text-xs">
-                        ({entry.method || "N/A"})
-                      </span>
-                    </>
-                  )}
-                </div>
-
-                <div className="flex gap-6">
-                  <span
-                    className={
-                      entry.type === "order"
-                        ? "text-blue-600 font-medium"
-                        : "text-green-600 font-medium"
-                    }
-                  >
-                    {entry.type === "order" ? "+" : "-"}₹
-                    {entry.amount.toFixed(2)}
-                  </span>
-
-                  <span className="font-bold">
-                    ₹{runningBalance.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-6 border-t pt-4">
+      <div className="space-y-3">
+        <div className="bg-white shadow rounded-lg p-4">
           <h4 className="font-semibold mb-3">Add Payment</h4>
-
-          <div className="flex gap-3">
+          <div className="flex flex-row sm:flex-row gap-3">
             <input
               type="number"
               placeholder="Amount"
               value={paymentAmount}
               onChange={(e) => setPaymentAmount(e.target.value)}
-              className="border p-2 rounded w-32"
+              className="border p-2 rounded w-full sm:w-32"
             />
-
             <input
               type="text"
               placeholder="Method"
               value={paymentMethod}
               onChange={(e) => setPaymentMethod(e.target.value)}
-              className="border p-2 rounded"
+              className="border p-2 rounded w-full"
             />
-
             <button
               onClick={addPayment}
-              className="bg-green-600 text-white px-4 py-2 rounded"
+              className="bg-green-600 text-white px-4 py-2 rounded w-full sm:w-auto"
             >
               Save
             </button>
           </div>
+        </div>
+
+        <div className="bg-white shadow rounded-lg p-4">
+          <button
+            onClick={() => setSelectedCustomer(null)}
+            className="mb-4 bg-gray-600 text-white px-2 py-1 rounded"
+          >
+            ← Back
+          </button>
+
+          {ledgerEntries.map((entry) => {
+            runningBalance +=
+              entry.type === "order"
+                ? entry.amount
+                : -entry.amount;
+
+            const isActive = activeId === entry.id;
+            const isEditing = editId === entry.id;
+
+            return (
+              <div key={entry.id} className="border-b py-3">
+                <div
+                  className="flex flex-col sm:flex-row sm:justify-between cursor-pointer"
+                  onClick={() =>
+                    entry.type === "payment"
+                      ? setActiveId(isActive ? null : entry.id)
+                      : null
+                  }
+                >
+                  <div>
+                    {new Date(entry.created_at).toLocaleDateString()} -{" "}
+                    {entry.type === "order"
+                      ? "Order"
+                      : `Payment (${entry.method || "N/A"})`}
+                  </div>
+
+                  <div className="flex gap-6">
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        value={editAmount}
+                        onChange={(e) =>
+                          setEditAmount(e.target.value)
+                        }
+                        className="border p-1 rounded w-24"
+                      />
+                    ) : (
+                      <span
+                        className={
+                          entry.type === "order"
+                            ? "text-blue-600"
+                            : "text-green-600"
+                        }
+                      >
+                        {entry.type === "order" ? "+" : "-"}₹
+                        {entry.amount.toFixed(2)}
+                      </span>
+                    )}
+
+                    <span className="font-bold">
+                      ₹{runningBalance.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                {isActive && entry.type === "payment" && (
+                  <div className="flex gap-2 mt-2">
+                    {isEditing ? (
+                      <>
+                        <button
+                          onClick={() =>
+                            handleEditSave(entry.id)
+                          }
+                          className="bg-blue-600 text-white px-3 py-1 rounded"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditId(null)}
+                          className="bg-gray-400 text-white px-3 py-1 rounded"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditId(entry.id);
+                            setEditAmount(
+                              entry.amount.toString()
+                            );
+                          }}
+                          className="bg-yellow-500 text-white px-3 py-1 rounded"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() =>
+                            handleDelete(entry.id)
+                          }
+                          className="bg-red-600 text-white px-3 py-1 rounded"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     );
   };
 
   return (
-    <div className="p-6">
-      {!selectedCustomer && (
-        <>
-          <h2 className="text-2xl font-bold mb-6">Customer Balance</h2>
-
-          <div className="space-y-3">
-            {customers.map((c) => (
-              <div
-                key={c.id}
-                onClick={() => openLedger(c)}
-                className="p-4 border rounded flex justify-between cursor-pointer hover:bg-gray-50 bg-white shadow-sm"
-              >
-                <div>
-                  <p className="font-semibold">{c.name}</p>
-                  <p className="text-sm text-gray-500">{c.phone}</p>
-                </div>
-
-                <div className="text-right text-sm">
-                  <p>Total: ₹{c.totalOrders.toFixed(2)}</p>
-                  <p>Paid: ₹{c.totalPayments.toFixed(2)}</p>
-                  <p
-                    className={`font-bold ${
-                      c.balance > 0
-                        ? "text-red-600"
-                        : "text-green-600"
-                    }`}
-                  >
-                    Balance: ₹{c.balance.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            ))}
+    <div className="space-y-6">
+      {!selectedCustomer &&
+        customers.map((c) => (
+          <div
+            key={c.id}
+            onClick={() => openLedger(c)}
+            className="p-4 border rounded cursor-pointer bg-white shadow-sm"
+          >
+            <p className="font-semibold">{c.name}</p>
+            <p>Total: ₹{c.totalOrders.toFixed(2)}</p>
+            <p>Balance: ₹{c.balance.toFixed(2)}</p>
           </div>
-        </>
-      )}
+        ))}
 
       {selectedCustomer && renderLedger()}
     </div>

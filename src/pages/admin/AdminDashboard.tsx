@@ -94,6 +94,9 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [productSearchQuery, setProductSearchQuery] = useState("");
+  const [lowStockList, setLowStockList] = useState<any[]>([]);
+  const [showLowStock, setShowLowStock] = useState(false);
+
 
 
 
@@ -428,7 +431,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       const lowStockRes = await supabase
         .from('products')
         .select('*')
-        .lt('stock', 10);
+        .lt('stock', 5);
 
       const pendingOrdersRes = await supabase
         .from('orders')
@@ -1055,6 +1058,23 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     });
   }, [products, productSearchQuery, selectedCategory]);
 
+  // low stock product function
+  const handleLowStockClick = async () => {
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+      .eq("stock", 0); 
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    setLowStockList(data || []);
+    setShowLowStock(true);
+  };
+
+
 
   if (loading) {
     return (
@@ -1177,13 +1197,13 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </button>
           <button
             onClick={() => setActiveTab('customer-balance')}
-            className={`px-4 py-2 rounded-lg flex items-center gap-2 ${activeTab === 'customer-balance'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-100'
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold transition text-sm ${activeTab === 'customer-balance'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
               }`}
           >
-            <CreditCard size={18} />
-            Customer Balance
+            <CreditCard className="h-4 w-4" />
+            <span>Customer Balance</span>
           </button>
 
         </div>
@@ -1229,7 +1249,10 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl shadow-md p-6">
+              <div
+                onClick={() => handleLowStockClick()}
+                className="bg-white rounded-xl shadow-md p-6 cursor-pointer hover:shadow-lg transition"
+              >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-600 text-sm">Low Stock Products</p>
@@ -1240,6 +1263,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   <Package className="h-10 w-10 text-red-600 opacity-20" />
                 </div>
               </div>
+
 
               <div className="bg-white rounded-xl shadow-md p-6">
                 <div className="flex items-center justify-between">
@@ -1266,13 +1290,37 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               </div>
             </div>
 
+            {showLowStock && (
+              <div className="mt-6 bg-white rounded-xl shadow-md p-6">
+                <h2 className="text-lg font-semibold mb-4 text-red-600">
+                  Out of Stock Products
+                </h2>
+
+                {lowStockList.length === 0 ? (
+                  <p className="text-gray-500">No out of stock products 🎉</p>
+                ) : (
+                  <div className="space-y-3">
+                    {lowStockList.map((product) => (
+                      <div
+                        key={product.id}
+                        onClick={() => openProductModal(product)}
+                        className="p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+                      >
+                        {product.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {stats.lowStockProducts > 0 && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
                 <h3 className="text-lg font-bold text-yellow-900 mb-4">
                   Low Stock Alert
                 </h3>
                 <p className="text-yellow-800">
-                  You have {stats.lowStockProducts} product(s) with low stock levels (less than 10 units). Please consider restocking them.
+                  You have {stats.lowStockProducts} product(s) with low stock levels (less than 5 units). Please consider restocking them.
                 </p>
               </div>
             )}
