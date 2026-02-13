@@ -516,54 +516,55 @@ export default function EmployeeDashboard() {
                 {tab === "products" && (
                     <div>
                         {!activeCustomer && (
-                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-3">
                                 <p className="text-yellow-800">
-                                    ⚠️ Please select a customer from the Customers page before adding products to cart.
+                                    ⚠️ Please select a customer 
                                 </p>
                             </div>
                         )}
 
-                        {products.length > 0 && (
-                            <div className=" mb-4 sticky top-[92px] z-20 bg-white">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <input
-                                    type="text"
-                                    placeholder="Search by Item ID..."
-                                    value={productSearchQuery}
-                                    onChange={(e) => setProductSearchQuery(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </div>
-                        )}
-                        {/* Categories Section */}
-                        {categories.length > 0 && (
-                            <div className="w-full overflow-x-auto sticky top-[135px] z-20 bg-white max-w-full">
-                                <div className="flex gap-3 whitespace-nowrap px-2 py-3">
-                                    <button
-                                        onClick={() => setSelectedCategory(null)}
-                                        className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === null
-                                            ? 'bg-blue-600 text-white'
-                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                            }`}
-                                    >
-                                        All
-                                    </button>
-                                    {categories.map((category) => (
+                        <div className=" sticky top-[90px] bg-white">
+                            {products.length > 0 && (
+                                <div className="sticky top-[92px] z-20 bg-white ">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search by Item ID..."
+                                        value={productSearchQuery}
+                                        onChange={(e) => setProductSearchQuery(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+                            )}
+                            {/* Categories Section */}
+                            {categories.length > 0 && (
+                                <div className="w-full overflow-x-auto bg-white max-w-full">
+                                    <div className="flex gap-3 whitespace-nowrap px-2 py-3">
                                         <button
-                                            key={category}
-                                            onClick={() => setSelectedCategory(category)}
-                                            className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === category
+                                            onClick={() => setSelectedCategory(null)}
+                                            className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === null
                                                 ? 'bg-blue-600 text-white'
                                                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                                 }`}
                                         >
-                                            {category}
+                                            All
                                         </button>
-                                    ))}
+                                        {categories.map((category) => (
+                                            <button
+                                                key={category}
+                                                onClick={() => setSelectedCategory(category)}
+                                                className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === category
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                    }`}
+                                            >
+                                                {category}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
-
+                            )}
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-6">
                             {filteredProducts.length === 0 ? (
                                 <p className="col-span-full text-center text-gray-500 py-6">
