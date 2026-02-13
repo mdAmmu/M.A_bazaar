@@ -1043,6 +1043,155 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
   };
 
+  const generateThermalEscPosBill = (order: OrderWithItems, billNo: string) => {
+
+    const safe = (v: unknown) => String(v ?? "").trim();
+  
+    const money = (value: unknown) => {
+      const n = Number(value ?? 0);
+      return Number.isFinite(n) ? n.toFixed(2) : "0.00";
+    };
+  
+    const line = "--------------------------------\n";
+  
+    const center = "\x1B\x61\x01";
+    const left = "\x1B\x61\x00";
+    const boldOn = "\x1B\x45\x01";
+    const boldOff = "\x1B\x45\x00";
+    const cut = "\x1D\x56\x00";
+  
+    const customerFromTable = order.customers;
+  
+    const customerName =
+      customerFromTable?.name ||
+      (order as any)?.customer_name ||
+      order.profiles?.name ||
+      "";
+  
+    const customerPhone =
+      customerFromTable?.phone ||
+      (order as any)?.customer_phone ||
+      order.profiles?.phone ||
+      "";
+  
+    const customerAddress =
+      customerFromTable?.address ||
+      (order as any)?.customer_address ||
+      order.profiles?.address ||
+      "";
+  
+    let bill = "";
+  
+    // ===== HEADER =====
+    bill += center;
+    bill += boldOn;
+    bill += "M.A Bazaar\n";
+    bill += boldOff;
+  
+    bill += "Itwara Bazar, Bhusar Lane\n";
+    bill += "Near Bharat Medical\n";
+    bill += "Nanded - 431604\n";
+    bill += "Mobile: 9890850160,7758846111\n";
+  
+    bill += line;
+  
+    bill += left;
+    bill += `Bill: ${billNo}\n`;
+    bill += `Order: ${order.id.slice(0, 8)}\n`;
+    bill += `Date: ${new Date().toLocaleString()}\n`;
+  
+    bill += line;
+  
+    // ===== CUSTOMER =====
+    bill += boldOn + "Customer\n" + boldOff;
+    bill += `${safe(customerName)}\n`;
+    bill += `${safe(customerPhone)}\n`;
+    bill += `${safe(customerAddress)}\n`;
+  
+    bill += line;
+  
+    // ===== ITEMS HEADER =====
+    bill += boldOn;
+    bill += "Item            Qty   Price   Amt\n";
+    bill += boldOff;
+    bill += line;
+  
+    // ===== ITEMS =====
+    order.order_items?.forEach((it) => {
+  
+      const name = safe(it.products?.name || "Unknown").substring(0, 14);
+      const qty = safe(it.quantity);
+      const price = money(it.price ?? it.products?.price ?? 0);
+      const subtotal = money(it.subtotal ?? 0);
+  
+      const row =
+        name.padEnd(14) +
+        qty.toString().padStart(4) +
+        price.toString().padStart(8) +
+        subtotal.toString().padStart(8);
+  
+      bill += row + "\n";
+    });
+  
+    bill += line;
+  
+    // ===== TOTALS =====
+    const totalAmount = Number(order.total_amount || 0);
+    const delivery = Number((order as any).delivery_charge ?? 0);
+    const discount = Number(order.discount_amount || 0);
+    const final = Number(order.final_amount || 0);
+  
+    bill += `Subtotal:        Rs ${money(totalAmount)}\n`;
+    bill += `Delivery:        Rs ${money(delivery)}\n`;
+    bill += `Discount:        Rs ${money(discount)}\n`;
+  
+    bill += line;
+  
+    bill += boldOn;
+    bill += `TOTAL:           Rs ${money(final)}\n`;
+    bill += boldOff;
+  
+    bill += "\n\n";
+  
+    bill += center + "Thank you!\n\n\n";
+  
+    bill += cut;
+  
+    return bill;
+  };
+
+  const printThermalBill = async (
+    order: OrderWithItems,
+    billNo: string
+  ) => {
+    try {
+  
+      const escpos = generateThermalEscPosBill(order, billNo);
+  
+      const blob = new Blob([escpos], { type: "text/plain" });
+  
+      const file = new File([blob], `Bill_${billNo}.txt`, {
+        type: "text/plain",
+      });
+  
+      if (navigator.share && navigator.canShare({ files: [file] })) {
+  
+        await navigator.share({
+          files: [file],
+          title: "Print Bill",
+          text: "Select printer app",
+        });
+  
+      } else {
+        alert("Printing not supported on this device");
+      }
+  
+    } catch (err) {
+      console.error(err);
+      alert("Failed to print bill");
+    }
+  };
+
   const filteredProducts = useMemo(() => {
     const search = productSearchQuery.toLowerCase().trim();
 
@@ -1387,6 +1536,13 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           >
                             <Printer className="h-4 w-4" />
                             <span>{printingOrderId === order.id ? 'Saving...' : 'Save PDF'}</span>
+                          </button>
+                          <button
+                            onClick={() => printThermalBill(order, order.id)}
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+                          >
+                            <Printer className="h-4 w-4" />
+                            <span>{printingOrderId === order.id ? 'Printing...' : 'Print Bill'}</span>
                           </button>
 
                         </div>
