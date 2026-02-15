@@ -91,6 +91,8 @@ export default function EmployeeDashboard() {
     const [addingCustomer, setAddingCustomer] = useState(false);
     const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
     const [shopImage, setShopImage] = useState<File | null>(null);
+    const [uploadCustomer, setUploadCustomer] = useState<Customer | null>(null);
+    const [uploadFile, setUploadFile] = useState<File | null>(null);
 
 
     // const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
@@ -323,46 +325,64 @@ export default function EmployeeDashboard() {
     const addCustomer = async () => {
         if (!employeeId) return;
 
-        setAddingCustomer(true);
+        try {
+            setAddingCustomer(true);
 
-        let imageUrl = null;
+            let imageUrl: string | null = null;
 
-        // ✅ Upload image if selected
-        if (shopImage) {
-            const fileName = `${Date.now()}-${shopImage.name}`;
+            // ✅ Upload Image
+            if (shopImage) {
+                const fileExt = shopImage.name.split(".").pop();
+                const fileName = `${employeeId}-${Date.now()}.${fileExt}`;
+                const filePath = `shops/${fileName}`;
 
-            const { error: uploadError } = await supabase.storage
-                .from("customer-images")   // 👈 your bucket name
-                .upload(fileName, shopImage);
+                const { error: uploadError } = await supabase.storage
+                    .from("customer-images")
+                    .upload(filePath, shopImage, {
+                        cacheControl: "3600",
+                        upsert: false,
+                    });
 
-            if (!uploadError) {
+                if (uploadError) {
+                    console.error("Image Upload Error:", uploadError);
+                    alert("Image upload failed");
+                    return;
+                }
+
+                // ✅ Get Public URL
                 const { data } = supabase.storage
                     .from("customer-images")
-                    .getPublicUrl(fileName);
+                    .getPublicUrl(filePath);
 
                 imageUrl = data.publicUrl;
+                console.log("Generated Image URL:", data.publicUrl);
             }
-        }
 
-        // ✅ Insert customer with image URL
-        const { data } = await supabase
-            .from("customers")
-            .insert([
-                {
-                    name,
-                    phone,
-                    address,
-                    latitude: lat,
-                    longitude: lng,
-                    employee_id: employeeId,
-                    image_url: imageUrl   // 👈 new column
-                }
-            ])
-            .select()
-            .single();
+            // ✅ Insert Customer
+            const { data: customerData, error: insertError } = await supabase
+                .from("customers")
+                .insert([
+                    {
+                        name,
+                        phone,
+                        address,
+                        latitude: lat,
+                        longitude: lng,
+                        employee_id: employeeId,
+                        image_url: imageUrl,
+                    },
+                ])
+                .select()
+                .single();
 
-        if (data) {
-            setActiveCustomer(data);
+            if (insertError) {
+                console.error("Customer Insert Error:", insertError);
+                alert("Failed to add customer");
+                return;
+            }
+
+            // ✅ Reset UI
+            setActiveCustomer(customerData);
             setCustomerTab("existing");
 
             setName("");
@@ -370,17 +390,62 @@ export default function EmployeeDashboard() {
             setAddress("");
             setLat(null);
             setLng(null);
-            setShopImage(null); // reset image
+            setShopImage(null);
 
             await fetchCustomers();
+        } catch (err) {
+            console.error("Unexpected Error:", err);
+        } finally {
+            setAddingCustomer(false);
         }
-
-        setAddingCustomer(false);
     };
 
     const selectCustomer = (c: Customer) => {
         setActiveCustomer(c);
         setTab("products");
+    };
+
+    const openUploadModal = (customer: Customer) => {
+        setUploadCustomer(customer);
+    };
+
+    const uploadCustomerImage = async () => {
+        if (!uploadFile || !uploadCustomer) return;
+
+        try {
+            const fileExt = uploadFile.name.split(".").pop();
+            const filePath = `shops/${uploadCustomer.id}-${Date.now()}.${fileExt}`;
+
+            // Upload to storage
+            const { error: uploadError } = await supabase.storage
+                .from("customer-images")
+                .upload(filePath, uploadFile);
+
+            if (uploadError) {
+                alert("Upload failed");
+                return;
+            }
+
+            // Get public URL
+            const { data } = supabase.storage
+                .from("customer-images")
+                .getPublicUrl(filePath);
+
+            const imageUrl = data.publicUrl;
+
+            // Update customer record
+            await supabase
+                .from("customers")
+                .update({ image_url: imageUrl })
+                .eq("id", uploadCustomer.id);
+
+            await fetchCustomers();
+
+            setUploadCustomer(null);
+            setUploadFile(null);
+        } catch (err) {
+            console.error(err);
+        }
     };
 
     // ===== CART =====
@@ -835,22 +900,32 @@ export default function EmployeeDashboard() {
                                                                     </p>
                                                                 )}
                                                             </div>
-                                                            <div className="w-[100px] h-[100px] rounded-lg overflow-hidden bg-gray-200 flex items-center justify-center">
-                                                                <img
-                                                                    src="https://images.unsplash.com/photo-1503023345310-bd7c1de61c7d"
-                                                                    alt={customer.name}
-                                                                    className="w-full h-full object-cover"
-                                                                />
+                                                            <div className="relative w-[100px] h-[100px] rounded-lg overflow-hidden bg-gray-200 flex items-center justify-center">
+
+                                                                {/* ✅ Show Image if exists */}
+                                                                {customer.image_url ? (
+                                                                    <img
+                                                                        src={customer.image_url}
+                                                                        alt={customer.name}
+                                                                        className="w-full h-full object-cover"
+                                                                    />
+                                                                ) : (
+                                                                    /* ✅ Show Plus Button if image missing */
+                                                                    <button
+                                                                        onClick={() => openUploadModal(customer)}
+                                                                        className="absolute inset-0 flex items-center justify-center text-gray-500 hover:bg-gray-300 transition"
+                                                                    >
+                                                                        <span className="text-3xl font-bold">+</span>
+                                                                    </button>
+                                                                )}
                                                             </div>
 
 
 
 
-                                                            {activeCustomer?.id === customer.id && (
-                                                                <span className="text-blue-600 font-semibold text-sm">
-                                                                    Active
-                                                                </span>
-                                                            )}
+                                                            {/* {activeCustomer?.id === customer.id && (
+                                                                
+                                                            )} */}
                                                         </div>
 
                                                         <div className="mt-3 flex gap-2">
@@ -1341,6 +1416,49 @@ export default function EmployeeDashboard() {
                             </div>
 
                         )}
+                    </div>
+                )}
+                {/* shop image upload model function */}
+                {uploadCustomer && (
+                    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                        <div className="bg-white p-6 rounded-xl w-[320px] shadow-lg">
+
+                            <h3 className="text-lg font-semibold mb-4">
+                                Upload Shop Image
+                            </h3>
+
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) =>
+                                    setUploadFile(e.target.files ? e.target.files[0] : null)
+                                }
+                                className="w-full mb-4"
+                            />
+
+                            {uploadFile && (
+                                <img
+                                    src={URL.createObjectURL(uploadFile)}
+                                    className="w-full h-40 object-cover rounded mb-4"
+                                />
+                            )}
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={uploadCustomerImage}
+                                    className="flex-1 bg-green-600 text-white py-2 rounded"
+                                >
+                                    Upload
+                                </button>
+
+                                <button
+                                    onClick={() => setUploadCustomer(null)}
+                                    className="flex-1 bg-gray-300 py-2 rounded"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

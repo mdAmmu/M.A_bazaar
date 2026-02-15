@@ -165,10 +165,12 @@ export default function CustomerBalance() {
         await fetchCustomerBalances();
     };
 
-    const filteredCustomers = customers.filter((c) =>
+    const filteredCustomers = customers
+    .filter((c) =>
         c.name.toLowerCase().includes(search.toLowerCase()) ||
         c.phone.includes(search)
-    );
+    )
+    .sort((a, b) => b.balance - a.balance); // Highest balance first
 
     const renderLedger = () => {
         if (!selectedCustomer) return null;
