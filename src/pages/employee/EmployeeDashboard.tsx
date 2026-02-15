@@ -37,6 +37,8 @@ type Customer = {
     latitude: number | null;
     longitude: number | null;
     created_at: string;
+    image_url: string | null;   // 👈 ADD THIS
+
 };
 
 type CartItem = {
@@ -88,6 +90,8 @@ export default function EmployeeDashboard() {
     const [locationStatus, setLocationStatus] = useState("");
     const [addingCustomer, setAddingCustomer] = useState(false);
     const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
+    const [shopImage, setShopImage] = useState<File | null>(null);
+
 
     // const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
@@ -321,6 +325,26 @@ export default function EmployeeDashboard() {
 
         setAddingCustomer(true);
 
+        let imageUrl = null;
+
+        // ✅ Upload image if selected
+        if (shopImage) {
+            const fileName = `${Date.now()}-${shopImage.name}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from("customer-images")   // 👈 your bucket name
+                .upload(fileName, shopImage);
+
+            if (!uploadError) {
+                const { data } = supabase.storage
+                    .from("customer-images")
+                    .getPublicUrl(fileName);
+
+                imageUrl = data.publicUrl;
+            }
+        }
+
+        // ✅ Insert customer with image URL
         const { data } = await supabase
             .from("customers")
             .insert([
@@ -330,7 +354,8 @@ export default function EmployeeDashboard() {
                     address,
                     latitude: lat,
                     longitude: lng,
-                    employee_id: employeeId
+                    employee_id: employeeId,
+                    image_url: imageUrl   // 👈 new column
                 }
             ])
             .select()
@@ -339,11 +364,13 @@ export default function EmployeeDashboard() {
         if (data) {
             setActiveCustomer(data);
             setCustomerTab("existing");
+
             setName("");
             setPhone("");
             setAddress("");
             setLat(null);
             setLng(null);
+            setShopImage(null); // reset image
 
             await fetchCustomers();
         }
@@ -791,7 +818,7 @@ export default function EmployeeDashboard() {
                                                             : "border-gray-200 hover:border-blue-300 hover:bg-gray-50"
                                                             }`}
                                                     >
-                                                        <div className="flex justify-between items-start">
+                                                        <div className="flex justify-between">
                                                             <div>
                                                                 <h3 className="font-semibold text-gray-900">
                                                                     {customer.name}
@@ -808,6 +835,16 @@ export default function EmployeeDashboard() {
                                                                     </p>
                                                                 )}
                                                             </div>
+                                                            <div className="w-[100px] h-[100px] rounded-lg overflow-hidden bg-gray-200 flex items-center justify-center">
+                                                                <img
+                                                                    src="https://images.unsplash.com/photo-1503023345310-bd7c1de61c7d"
+                                                                    alt={customer.name}
+                                                                    className="w-full h-full object-cover"
+                                                                />
+                                                            </div>
+
+
+
 
                                                             {activeCustomer?.id === customer.id && (
                                                                 <span className="text-blue-600 font-semibold text-sm">
@@ -929,6 +966,21 @@ export default function EmployeeDashboard() {
                                             className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                                         />
                                     </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Shop Image
+                                        </label>
+
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={(e) =>
+                                                setShopImage(e.target.files ? e.target.files[0] : null)
+                                            }
+                                            className="w-full px-4 py-2 border rounded-lg bg-white"
+                                        />
+                                    </div>
+
 
                                     <div>
                                         <button
@@ -1244,16 +1296,33 @@ export default function EmployeeDashboard() {
                                                                             {items.map((item) => (
                                                                                 <div
                                                                                     key={item.id}
-                                                                                    className="flex justify-between text-sm bg-gray-50 rounded px-3 py-2 mb-2"
+                                                                                    className="flex items-center justify-between bg-gray-50 rounded px-3 py-2 mb-2"
                                                                                 >
-                                                                                    <span>
-                                                                                        {item.products?.name}
-                                                                                    </span>
-                                                                                    <span>
+                                                                                    {/* Left Side: Image + Name */}
+                                                                                    <div className="flex items-center gap-3">
+                                                                                        <img
+                                                                                            src={item.products?.image_url || "/placeholder.png"}
+                                                                                            alt={item.products?.name}
+                                                                                            className="w-12 h-12 object-cover rounded-md border"
+                                                                                        />
+
+                                                                                        <div>
+                                                                                            <p className="text-sm font-medium">
+                                                                                                {item.products?.name}
+                                                                                            </p>
+                                                                                            <p className="text-xs text-gray-500">
+                                                                                                ₹{item.price} each
+                                                                                            </p>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    {/* Right Side: Quantity */}
+                                                                                    <div className="text-sm font-semibold">
                                                                                         {item.quantity} × ₹{item.price}
-                                                                                    </span>
+                                                                                    </div>
                                                                                 </div>
                                                                             ))}
+
                                                                         </div>
 
                                                                         <div className="md:col-span-2 text-right font-bold text-lg text-blue-600">
