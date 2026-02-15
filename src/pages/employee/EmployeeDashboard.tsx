@@ -16,7 +16,8 @@ import {
     Calendar,
     Navigation,
     Search,
-    LogOut
+    LogOut,
+    Truck
 } from "lucide-react";
 
 import { supabase, Product } from "../../lib/supabase";
@@ -24,6 +25,8 @@ import { useAuth } from "../../context/AuthContext";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import { AppLauncher } from "@capacitor/app-launcher";
+import Deliver from "../employee/Deliver";
+
 
 // ===== TYPES =====
 type Customer = {
@@ -39,6 +42,7 @@ type Customer = {
 type CartItem = {
     product: Product;
     qty: number;
+    price: number;
 };
 
 type OrderWithItems = {
@@ -64,7 +68,7 @@ type OrderWithItems = {
 export default function EmployeeDashboard() {
     const { profile, signOut } = useAuth();
 
-    const [tab, setTab] = useState<"products" | "customers" | "orders" | "cart">("products");
+    const [tab, setTab] = useState<"products" | "customers" | "orders" | "cart" | "deliver">("products");
     const [employeeId, setEmployeeId] = useState<string | null>(null);
 
     const [products, setProducts] = useState<Product[]>([]);
@@ -94,6 +98,8 @@ export default function EmployeeDashboard() {
     const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
     const [categories, setCategories] = useState<string[]>([]);
     const [discount, setDiscount] = useState(0);
+    const [editingTotalId, setEditingTotalId] = useState<string | null>(null);
+    // const [deliveryCharge, setDeliveryCharge] = useState(10);
 
 
     // ===== CATEGORY FILTER =====
@@ -226,6 +232,64 @@ export default function EmployeeDashboard() {
         }
     };
 
+    // ===== SET LOCATION FOR EXISTING CUSTOMER =====
+    const setCustomerLocation = async (customer: Customer) => {
+        try {
+            setLocationStatus("Getting location...");
+
+            let newLat: number | null = null;
+            let newLng: number | null = null;
+
+            if (Capacitor.isNativePlatform()) {
+                await Geolocation.requestPermissions();
+                const position = await Geolocation.getCurrentPosition();
+                newLat = position.coords.latitude;
+                newLng = position.coords.longitude;
+            } else {
+                await new Promise<void>((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                            newLat = pos.coords.latitude;
+                            newLng = pos.coords.longitude;
+                            resolve();
+                        },
+                        (err) => reject(err)
+                    );
+                });
+            }
+
+            if (!newLat || !newLng) {
+                alert("Unable to fetch location");
+                return;
+            }
+
+            // 🔥 UPDATE CUSTOMER IN DATABASE
+            const { error } = await supabase
+                .from("customers")
+                .update({
+                    latitude: newLat,
+                    longitude: newLng,
+                })
+                .eq("id", customer.id);
+
+            if (error) {
+                console.error(error);
+                alert("Failed to save location");
+                return;
+            }
+
+            setLocationStatus("Location saved successfully!");
+
+            // Refresh customers list
+            await fetchCustomers();
+
+        } catch (err: any) {
+            console.error(err);
+            alert("Location error");
+        }
+    };
+
+
     // ===== CUSTOMER =====
     const addCustomer = async () => {
         if (!employeeId) return;
@@ -273,16 +337,36 @@ export default function EmployeeDashboard() {
             setTab("customers");
             return;
         }
-
+    
         setCart((prev) => {
             const exist = prev.find((p) => p.product.id === product.id);
+    
             if (exist) {
                 return prev.map((p) =>
-                    p.product.id === product.id ? { ...p, qty: p.qty + 1 } : p
+                    p.product.id === product.id
+                        ? { ...p, qty: p.qty + 1 }
+                        : p
                 );
             }
-            return [...prev, { product, qty: 1 }];
+    
+            return [...prev, { product, qty: 1, price: product.price }];
         });
+    };
+
+    const updateLineTotal = (productId: string, newTotal: number) => {
+        setCart((prev) =>
+            prev.map((item) => {
+                if (item.product.id !== productId) return item;
+    
+                const newUnitPrice =
+                    item.qty > 0 ? newTotal / item.qty : 0;
+    
+                return {
+                    ...item,
+                    price: newUnitPrice,
+                };
+            })
+        );
     };
 
     const updateQty = (id: string, qty: number) => {
@@ -297,34 +381,14 @@ export default function EmployeeDashboard() {
         setCart((prev) => prev.filter((p) => p.product.id !== id));
     };
 
-    const totalAmount = cart.reduce((s, i) => s + i.qty * i.product.price, 0);
-    const deliveryCharge = 20;
+    const totalAmount = cart.reduce((s, i) => s + i.qty * i.price, 0);
     const finalTotal = Math.max(totalAmount - discount, 0);
 
 
-    // const placeOrder = async () => {
-    //     console.log("Place order clicked");
 
-    //     if (!employeeId) {
-    //         console.log("Missing employeeId");
-    //         return;
-    //     }
-
-    //     if (!activeCustomer) {
-    //         console.log("Missing activeCustomer");
-    //         return;
-    //     }
-
-    //     if (cart.length === 0) {
-    //         console.log("Cart is empty");
-    //         return;
-    //     }
-
-    //     console.log("All validations passed");
-
-
-    // }
     // ===== PLACE ORDER =====
+    const deliveryCharge = 10;
+
     const placeOrder = async () => {
         if (!employeeId || !activeCustomer || cart.length === 0) return;
 
@@ -333,7 +397,7 @@ export default function EmployeeDashboard() {
 
         // Calculate subtotal from cart (safe way)
         const subtotal = cart.reduce(
-            (sum, item) => sum + item.qty * item.product.price,
+            (sum, item) => sum + item.qty * item.price,
             0
         );
 
@@ -384,8 +448,8 @@ export default function EmployeeDashboard() {
                 order_id: order.id,
                 product_id: c.product.id,
                 quantity: c.qty,
-                price: c.product.price,
-                subtotal: c.qty * c.product.price
+                price: c.price,
+                subtotal: c.qty * c.price
             }))
         );
 
@@ -422,9 +486,9 @@ export default function EmployeeDashboard() {
         <div className="min-h-screen bg-gray-50 ">
             {/* Header */}
             <div className="bg-white shadow-md sticky top-0 z-50">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div className="max-w-7xl mx-auto px-4 sm:px-2 lg:px-8 py-2">
                     <div className="flex justify-between items-center">
-                        <h1 className="text-xl font-bold text-gray-900">Employee Dashboard</h1>
+                        <h1 className="text-xl font-bold text-gray-900 sm:text-sm md:text-2xl">Employee Dashboard</h1>
                         <div className="flex items-center gap-4">
                             {profile && (
                                 <div className="text-sm text-gray-600 flex items-center gap-2">
@@ -438,13 +502,13 @@ export default function EmployeeDashboard() {
                                 onClick={handleLogout}
                                 className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
                             >
-                                <LogOut className="h-5 w-5" />
+                                <LogOut className="h-4 w-4" />
                             </button>
                             <button
                                 onClick={() => setTab("cart")}
                                 className="relative bg-white border border-gray-300 rounded-lg p-2 hover:bg-gray-50 transition"
                             >
-                                <ShoppingCart className="h-6 w-6 text-gray-700" />
+                                <ShoppingCart className="h-5 w-5 text-gray-700" />
                                 {cart.length > 0 && (
                                     <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center">
                                         {cart.length}
@@ -457,105 +521,100 @@ export default function EmployeeDashboard() {
             </div>
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-                {/* Tabs */}
-                <div className="rounded-xl shadow-md mb-3  z-30 ">
-                    <div className="flex overflow-x-auto whitespace-nowrap border-b border-gray-200 scrollbar-hide">
-                        <button
-                            onClick={() => setTab("products")}
-                            className={`flex items-center gap-2 px-6 py-4 font-semibold transition ${tab === "products"
-                                ? "text-blue-600 border-b-2 border-blue-600"
-                                : "text-gray-600 hover:text-gray-900"
-                                }`}
-                        >
-                            <Package className="h-5 w-5" />
-                            Products
-                        </button>
-                        <button
-                            onClick={() => setTab("customers")}
-                            className={`flex items-center gap-2 px-6 py-4 font-semibold transition ${tab === "customers"
-                                ? "text-blue-600 border-b-2 border-blue-600"
-                                : "text-gray-600 hover:text-gray-900"
-                                }`}
-                        >
-                            <Users className="h-5 w-5" />
-                            Customers
-                        </button>
-                        <button
-                            onClick={() => setTab("orders")}
-                            className={`flex items-center gap-2 px-6 py-4 font-semibold transition ${tab === "orders"
-                                ? "text-blue-600 border-b-2 border-blue-600"
-                                : "text-gray-600 hover:text-gray-900"
-                                }`}
-                        >
-                            <ShoppingCart className="h-5 w-5" />
-                            Orders
-                        </button>
-                    </div>
-                </div>
+                {/* === STICKY HEADER SECTION (All in One) === */}
+                <div className="sticky top-[71px] z-30 bg-white border-b border-gray-200 shadow-sm">
 
-                {/* Active Customer Banner */}
-                {activeCustomer && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-600">Active Customer</p>
-                                <p className="font-semibold text-gray-900">{activeCustomer.name}</p>
-                                <p className="text-sm text-gray-600">{activeCustomer.phone}</p>
-                            </div>
+                    {/* Tabs */}
+                    <div className="flex overflow-x-auto whitespace-nowrap scrollbar-hide px-2 py-2 gap-2">
+                        {[
+                            { key: "products", label: "Products", icon: Package },
+                            { key: "customers", label: "Customer", icon: ShoppingCart },
+                            { key: "orders", label: "Orders", icon: Users },
+                            { key: "deliver", label: "Deliver", icon: Truck },
+                        ].map(({ key, label, icon: Icon }) => (
                             <button
-                                onClick={() => setActiveCustomer(null)}
-                                className="text-sm text-red-600 hover:text-red-700"
+                                key={key}
+                                onClick={() => setTab(key)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition
+                ${tab === key
+                                        ? "bg-blue-600 text-white"
+                                        : "bg-gray-100 text-gray-700"
+                                    }`}
                             >
-                                Clear
+                                <Icon className="h-3.5 w-3.5" />
+                                <span>{label}</span>
                             </button>
-                        </div>
+                        ))}
                     </div>
-                )}
 
-                {/* Products Tab */}
-                {tab === "products" && (
-                    <div>
-                        {!activeCustomer && (
-                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-3">
-                                <p className="text-yellow-800">
-                                    ⚠️ Please select a customer 
-                                </p>
+                    {/* Active Customer Banner */}
+                    {activeCustomer && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-1">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-[10px] text-gray-600">Active Customer</p>
+                                    <p className="font-semibold text-sm text-gray-900">{activeCustomer.name}</p>
+                                </div>
+                                <button
+                                    onClick={() => setActiveCustomer(null)}
+                                    className="text-sm text-red-600 hover:text-red-700"
+                                >
+                                    Clear
+                                </button>
                             </div>
-                        )}
+                        </div>
+                    )}
 
-                        <div className=" sticky top-[90px] bg-white">
+                    {/* Products Controls */}
+                    {tab === "products" && (
+                        <div className="px-2 pb-2 space-y-2">
+
+                            {/* Small Warning */}
+                            {!activeCustomer && (
+                                <div className="bg-yellow-50 border border-yellow-200 rounded-md px-3 py-1.5">
+                                    <p className="text-xs text-yellow-800">
+                                        ⚠ Select a customer
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Small Search */}
                             {products.length > 0 && (
-                                <div className="sticky top-[92px] z-20 bg-white ">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                                     <input
                                         type="text"
                                         placeholder="Search by Item ID..."
                                         value={productSearchQuery}
                                         onChange={(e) => setProductSearchQuery(e.target.value)}
-                                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
                                     />
                                 </div>
                             )}
-                            {/* Categories Section */}
+
+                            {/* Small Categories */}
                             {categories.length > 0 && (
-                                <div className="w-full overflow-x-auto bg-white max-w-full">
-                                    <div className="flex gap-3 whitespace-nowrap px-2 py-3">
+                                <div className="overflow-x-auto scrollbar-hide">
+                                    <div className="flex gap-2 whitespace-nowrap">
                                         <button
                                             onClick={() => setSelectedCategory(null)}
-                                            className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === null
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                            className={`px-3 py-1 text-xs rounded-full font-medium
+                            ${selectedCategory === null
+                                                    ? "bg-blue-600 text-white"
+                                                    : "bg-gray-100 text-gray-700"
                                                 }`}
                                         >
                                             All
                                         </button>
+
                                         {categories.map((category) => (
                                             <button
                                                 key={category}
                                                 onClick={() => setSelectedCategory(category)}
-                                                className={`px-4 py-2 rounded-full text-sm font-semibold transition ${selectedCategory === category
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                className={`px-3 py-1 text-xs rounded-full font-medium
+                                ${selectedCategory === category
+                                                        ? "bg-blue-600 text-white"
+                                                        : "bg-gray-100 text-gray-700"
                                                     }`}
                                             >
                                                 {category}
@@ -565,6 +624,13 @@ export default function EmployeeDashboard() {
                                 </div>
                             )}
                         </div>
+                    )}
+                </div>
+
+
+                {/* Products Tab */}
+                {tab === "products" && (
+                    <div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-6">
                             {filteredProducts.length === 0 ? (
                                 <p className="col-span-full text-center text-gray-500 py-6">
@@ -599,7 +665,7 @@ export default function EmployeeDashboard() {
                                             </div>
 
                                             <p className="text-lg font-bold text-blue-600 mb-2">
-                                                ₹{product.price.toFixed(2)}
+                                                ₹{product.price}
                                             </p>
 
                                             <p className="text-sm text-gray-600 mb-4">
@@ -735,13 +801,14 @@ export default function EmployeeDashboard() {
                                                             >
                                                                 Select Customer
                                                             </button>
-                                                            {customer.latitude != null && customer.longitude != null && (
+                                                            {/* If location exists → Show Locate */}
+                                                            {customer.latitude != null && customer.longitude != null ? (
+
                                                                 <button
                                                                     onClick={async (e) => {
                                                                         e.stopPropagation();
 
                                                                         try {
-
                                                                             const lat = customer.latitude;
                                                                             const lng = customer.longitude;
 
@@ -750,40 +817,38 @@ export default function EmployeeDashboard() {
                                                                                 return;
                                                                             }
 
-                                                                            // 👉 If running inside APK / Mobile
                                                                             if (Capacitor.isNativePlatform()) {
-
                                                                                 const url = `geo:${lat},${lng}?q=${lat},${lng}`;
                                                                                 await AppLauncher.openUrl({ url });
-
-                                                                            }
-
-                                                                            // 👉 If running in browser
-                                                                            else {
-
+                                                                            } else {
                                                                                 const url = `https://www.google.com/maps?q=${lat},${lng}`;
                                                                                 window.open(url, "_blank", "noopener,noreferrer");
-
                                                                             }
-
                                                                         } catch (error) {
                                                                             console.error("Map open error:", error);
                                                                         }
                                                                     }}
                                                                     className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition text-sm font-medium"
-                                                                    title="Open location in Google Maps"
                                                                 >
                                                                     <Navigation className="h-4 w-4" />
                                                                     Locate
                                                                 </button>
+
+                                                            ) : (
+
+                                                                /* If NO location → Show Set Location */
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setCustomerLocation(customer);
+                                                                    }}
+                                                                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition text-sm font-medium"
+                                                                >
+                                                                    <MapPin className="h-4 w-4" />
+                                                                    Set Location
+                                                                </button>
+
                                                             )}
-                                                            {/* <button
-                                                        onClick={(e) => deleteCustomer(customer.id, e)}
-                                                        className="flex items-center justify-center p-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition"
-                                                        title="Delete customer"
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </button> */}
                                                         </div>
                                                     </div>
                                                 )));
@@ -873,6 +938,15 @@ export default function EmployeeDashboard() {
                     </div>
                 )}
 
+                {tab === "deliver" && (
+                    <Deliver
+                        orders={orders}
+                        fetchOrders={fetchOrders}
+                    />
+                )}
+
+
+
 
 
                 {/* Cart Tab */}
@@ -946,25 +1020,42 @@ export default function EmployeeDashboard() {
                                             <div className="flex-1">
                                                 <h3 className="font-semibold text-gray-900 mb-1">{item.product.name}</h3>
                                                 <p className="text-blue-600 font-semibold mb-3">
-                                                    ₹{item.product.price.toFixed(2)}
+                                                    ₹{item.product.price}
                                                 </p>
-                                                <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-1">
                                                     <button
                                                         onClick={() => updateQty(item.product.id, item.qty - 1)}
-                                                        className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition"
+                                                        className="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition"
                                                     >
-                                                        <Minus className="h-4 w-4" />
+                                                        <Minus className="h-3 w-3" />
                                                     </button>
                                                     <span className="font-semibold w-8 text-center">{item.qty}</span>
                                                     <button
                                                         onClick={() => updateQty(item.product.id, item.qty + 1)}
-                                                        className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition"
+                                                        className="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition"
                                                     >
-                                                        <Plus className="h-4 w-4" />
+                                                        <Plus className="h-3 w-3" />
                                                     </button>
-                                                    <span className="ml-4 font-semibold text-gray-900">
-                                                        ₹{(item.product.price * item.qty).toFixed(2)}
-                                                    </span>
+                                                    {editingTotalId === item.product.id ? (
+                                                        <input
+                                                            type="number"
+                                                            autoFocus
+                                                            value={(item.price * item.qty)}
+                                                            onChange={(e) =>
+                                                                updateLineTotal(item.product.id, Number(e.target.value))
+                                                            }
+                                                            onBlur={() => setEditingTotalId(null)}
+                                                            className="ml-4 border rounded px-2 py-1 w-28"
+                                                            
+                                                        />
+                                                    ) : (
+                                                        <span
+                                                            onClick={() => setEditingTotalId(item.product.id)}
+                                                            className="ml-4 font-semibold text-gray-900 cursor-pointer"
+                                                        >
+                                                            ₹{(item.price * item.qty)}
+                                                        </span>
+                                                    )}
                                                     <button
                                                         onClick={() => removeFromCart(item.product.id)}
                                                         className="ml-auto p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
@@ -984,7 +1075,7 @@ export default function EmployeeDashboard() {
                                         <div className="space-y-3 mb-4">
                                             <div className="flex justify-between text-sm">
                                                 <span className="text-gray-600">Subtotal</span>
-                                                <span className="font-semibold">₹{totalAmount.toFixed(2)}</span>
+                                                <span className="font-semibold">₹{totalAmount}</span>
                                             </div>
                                             <div className="flex justify-between text-sm">
                                                 <span className="text-gray-600">Items</span>
@@ -1005,7 +1096,7 @@ export default function EmployeeDashboard() {
                                             <div className="border-t pt-3 flex justify-between">
                                                 <span className="text-lg font-semibold text-gray-900">Total</span>
                                                 <span className="text-2xl font-bold text-blue-600">
-                                                    ₹{finalTotal.toFixed(2)}
+                                                    ₹{finalTotal}
                                                 </span>
                                             </div>
                                         </div>
@@ -1076,7 +1167,7 @@ export default function EmployeeDashboard() {
                                                             </span>
 
                                                             <span className="flex items-center gap-1">
-                                                                ₹{order.final_amount.toFixed(2)}
+                                                                ₹{order.final_amount}
                                                             </span>
                                                         </div>
                                                     </div>
@@ -1147,8 +1238,8 @@ export default function EmployeeDashboard() {
                                                                         {item.products?.name || "Product"}
                                                                     </span>
                                                                     <span className="font-semibold">
-                                                                        {item.quantity} × ₹{item.price.toFixed(2)} = ₹
-                                                                        {item.subtotal.toFixed(2)}
+                                                                        {item.quantity} × ₹{item.price} = ₹
+                                                                        {item.subtotal}
                                                                     </span>
                                                                 </div>
                                                             ))}
@@ -1159,21 +1250,21 @@ export default function EmployeeDashboard() {
                                                     <div className="space-y-1 text-sm w-fit">
                                                         <div className="flex justify-between">
                                                             <span>Subtotal</span>
-                                                            <span>₹{(order.total_amount ?? 0).toFixed(2)}</span>
+                                                            <span>₹{(order.total_amount ?? 0)}</span>
                                                         </div>
 
                                                         <div className="flex justify-between">
                                                             <span>Delivery</span>
-                                                            <span>₹{(order.delivery_charge ?? 0).toFixed(2)}</span>
+                                                            <span>₹{(order.delivery_charge ?? 0)}</span>
                                                         </div>
                                                         <div className="flex justify-between text-red-600">
                                                             <span>Discount</span>
-                                                            <span>-₹{(order.discount_amount ?? 0).toFixed(2)}</span>
+                                                            <span>-₹{(order.discount_amount ?? 0)}</span>
                                                         </div>
                                                         <div className="flex justify-between font-semibold text-lg text-blue-600 pt-2 border-t">
                                                             <span>Total</span>
                                                             <span>
-                                                                ₹{(order.final_amount ?? order.total_amount ?? 0).toFixed(2)}
+                                                                ₹{(order.final_amount ?? order.total_amount ?? 0)}
                                                             </span>
                                                         </div>
                                                     </div>

@@ -5,6 +5,8 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase, Product, Order, OrderItem, Profile } from '../../lib/supabase';
 import BulkProductUpload from './BulkProductUpload';
 import CustomerBalance from "../admin/CustomerBalance";
+import CustomerBills from "./CustomerBills";
+
 
 
 
@@ -96,6 +98,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [lowStockList, setLowStockList] = useState<any[]>([]);
   const [showLowStock, setShowLowStock] = useState(false);
+  const [showCustomerBills, setShowCustomerBills] = useState(false);
+
 
 
 
@@ -652,18 +656,20 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     setEditingOrderItems([]);
   };
 
-  const removeOrderItem = (itemId: string) => {
-    if (editingOrderItems.length <= 1) {
-      alert('An order must have at least one item. You cannot remove the last item.');
-      return;
-    }
-    setEditingOrderItems((items) => items.filter((item) => item.id !== itemId));
-  };
+  // const removeOrderItem = (itemId: string) => {
+  //   if (editingOrderItems.length <= 1) {
+  //     alert('An order must have at least one item. You cannot remove the last item.');
+  //     return;
+  //   }
+  //   setEditingOrderItems((items) => items.filter((item) => item.id !== itemId));
+  // };
 
+  // 🔁 Update Quantity
   const updateOrderItemQuantity = (itemId: string, newQuantity: number) => {
     if (newQuantity < 1) return;
-    setEditingOrderItems((items) =>
-      items.map((item) =>
+
+    setEditingOrderItems((prevItems) =>
+      prevItems.map((item) =>
         item.id === itemId
           ? {
             ...item,
@@ -675,16 +681,51 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     );
   };
 
+  // 💰 Update Price
+  const updateOrderItemPrice = (itemId: string, newPrice: number) => {
+    if (newPrice < 0) return;
+
+    setEditingOrderItems((prevItems) =>
+      prevItems.map((item) =>
+        item.id === itemId
+          ? {
+            ...item,
+            price: newPrice,
+            subtotal: newPrice * item.quantity,
+          }
+          : item
+      )
+    );
+  };
+
+  // 🗑 Remove Item
+  const removeOrderItem = (itemId: string) => {
+    setEditingOrderItems((prevItems) =>
+      prevItems.filter((item) => item.id !== itemId)
+    );
+  };
+
+  // 🧮 Recalculate Totals
   const recalculateOrderTotals = () => {
     if (!editingOrder) {
       return { subtotal: 0, deliveryCharge: 0, discount: 0, finalAmount: 0 };
     }
-    const subtotal = editingOrderItems.reduce((sum, item) => sum + item.subtotal, 0);
+
+    const subtotal = editingOrderItems.reduce(
+      (sum, item) => sum + (item.subtotal || 0),
+      0
+    );
+
     const deliveryCharge = editingOrder.delivery_charge || 0;
     const discount = editingOrder.discount_amount || 0;
+
     const finalAmount = subtotal + deliveryCharge - discount;
+
     return { subtotal, deliveryCharge, discount, finalAmount };
   };
+
+
+
 
   const saveOrderChanges = async () => {
     if (!editingOrder) return;
@@ -779,7 +820,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         const abs = Math.abs(Number.isFinite(n) ? n : 0);
         const prefix = opts?.negative ? '--' : '';
         const symbol = opts?.withSymbol === false ? '' : 'Rs. ';
-        return `${prefix}${symbol}${abs.toFixed(2)}`;
+        return `${prefix}${symbol}${abs}`;
       };
 
 
@@ -1046,117 +1087,117 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const generateThermalEscPosBill = (order: OrderWithItems, billNo: string) => {
 
     const safe = (v: unknown) => String(v ?? "").trim();
-  
+
     const money = (value: unknown) => {
       const n = Number(value ?? 0);
-      return Number.isFinite(n) ? n.toFixed(2) : "0.00";
+      return Number.isFinite(n) ? n : "0";
     };
-  
+
     const line = "--------------------------------\n";
-  
+
     const center = "\x1B\x61\x01";
     const left = "\x1B\x61\x00";
     const boldOn = "\x1B\x45\x01";
     const boldOff = "\x1B\x45\x00";
     const cut = "\x1D\x56\x00";
-  
+
     const customerFromTable = order.customers;
-  
+
     const customerName =
       customerFromTable?.name ||
       (order as any)?.customer_name ||
       order.profiles?.name ||
       "";
-  
+
     const customerPhone =
       customerFromTable?.phone ||
       (order as any)?.customer_phone ||
       order.profiles?.phone ||
       "";
-  
+
     const customerAddress =
       customerFromTable?.address ||
       (order as any)?.customer_address ||
       order.profiles?.address ||
       "";
-  
+
     let bill = "";
-  
+
     // ===== HEADER =====
     bill += center;
     bill += boldOn;
     bill += "M.A Bazaar\n";
     bill += boldOff;
-  
+
     bill += "Itwara Bazar, Bhusar Lane\n";
     bill += "Near Bharat Medical\n";
     bill += "Nanded - 431604\n";
     bill += "Mobile: 9890850160,7758846111\n";
-  
+
     bill += line;
-  
+
     bill += left;
     bill += `Bill: ${billNo}\n`;
     bill += `Order: ${order.id.slice(0, 8)}\n`;
     bill += `Date: ${new Date().toLocaleString()}\n`;
-  
+
     bill += line;
-  
+
     // ===== CUSTOMER =====
     bill += boldOn + "Customer\n" + boldOff;
     bill += `${safe(customerName)}\n`;
     bill += `${safe(customerPhone)}\n`;
     bill += `${safe(customerAddress)}\n`;
-  
+
     bill += line;
-  
+
     // ===== ITEMS HEADER =====
     bill += boldOn;
-    bill += "Item            Qty   Price   Amt\n";
+    bill += "Item                        Qty   Price    Amt\n";
     bill += boldOff;
     bill += line;
-  
+
     // ===== ITEMS =====
     order.order_items?.forEach((it) => {
-  
+
       const name = safe(it.products?.name || "Unknown").substring(0, 14);
       const qty = safe(it.quantity);
       const price = money(it.price ?? it.products?.price ?? 0);
       const subtotal = money(it.subtotal ?? 0);
-  
+
       const row =
         name.padEnd(14) +
         qty.toString().padStart(4) +
         price.toString().padStart(8) +
         subtotal.toString().padStart(8);
-  
+
       bill += row + "\n";
     });
-  
+
     bill += line;
-  
+
     // ===== TOTALS =====
     const totalAmount = Number(order.total_amount || 0);
     const delivery = Number((order as any).delivery_charge ?? 0);
     const discount = Number(order.discount_amount || 0);
     const final = Number(order.final_amount || 0);
-  
-    bill += `Subtotal:        Rs ${money(totalAmount)}\n`;
-    bill += `Delivery:        Rs ${money(delivery)}\n`;
-    bill += `Discount:        Rs ${money(discount)}\n`;
-  
+
+    bill += `Subtotal:               Rs ${money(totalAmount)}\n`;
+    bill += `Delivery:               Rs ${money(delivery)}\n`;
+    bill += `Discount:               Rs ${money(discount)}\n`;
+
     bill += line;
-  
+
     bill += boldOn;
-    bill += `TOTAL:           Rs ${money(final)}\n`;
+    bill += `TOTAL:                  Rs ${money(final)}\n`;
     bill += boldOff;
-  
+
     bill += "\n\n";
-  
+
     bill += center + "Thank you!\n\n\n";
-  
+
     bill += cut;
-  
+
     return bill;
   };
 
@@ -1165,27 +1206,27 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     billNo: string
   ) => {
     try {
-  
+
       const escpos = generateThermalEscPosBill(order, billNo);
-  
+
       const blob = new Blob([escpos], { type: "text/plain" });
-  
+
       const file = new File([blob], `Bill_${billNo}.txt`, {
         type: "text/plain",
       });
-  
+
       if (navigator.share && navigator.canShare({ files: [file] })) {
-  
+
         await navigator.share({
           files: [file],
           title: "Print Bill",
           text: "Select printer app",
         });
-  
+
       } else {
         alert("Printing not supported on this device");
       }
-  
+
     } catch (err) {
       console.error(err);
       alert("Failed to print bill");
@@ -1212,7 +1253,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     const { data, error } = await supabase
       .from("products")
       .select("*")
-      .eq("stock", 0); 
+      .eq("stock", 0);
 
     if (error) {
       console.error(error);
@@ -1476,84 +1517,112 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </div>
         )}
 
-        {activeTab === 'bills' && (
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Saved Bills</h2>
-            <div className="space-y-4">
-              {orders.length === 0 ? (
-                <div className="bg-white p-12 text-center rounded-xl shadow-sm">
-                  <p className="text-gray-600">No bills generated yet.</p>
-                </div>
-              ) : (
-                orders.map((order) => {
-                  const orderProfile = order.profiles || {
-                    name: 'N/A',
-                    phone: 'N/A',
-                    address: 'N/A',
-                  };
-                  // Check for customer from customers table (employee orders) first, then fallback to customer_name fields, then profile
-                  const customerFromTable = (order as OrderWithItems).customers;
-                  const customerName =
-                    customerFromTable?.name ||
-                    (order as Order & { customer_name?: string }).customer_name ||
-                    orderProfile.name;
-                  const customerPhone =
-                    customerFromTable?.phone ||
-                    (order as Order & { customer_phone?: string }).customer_phone ||
-                    orderProfile.phone;
-                  const customerAddress =
-                    customerFromTable?.address ||
-                    (order as Order & { customer_address?: string }).customer_address ||
-                    orderProfile.address;
-                  const orderItems = order.order_items || [];
-                  const itemSummary = orderItems
-                    .map((item) => `${item.products?.name ?? 'Item'} × ${item.quantity}`)
-                    .slice(0, 3)
-                    .join(', ');
+        {showCustomerBills ? (
+          <CustomerBills orders={orders} />
+        ) : (
+          activeTab === 'bills' && (
+            <div>
+              <div className='flex justify-between items-center p-2'>
+                <h2 className="text-2xl font-bold text-gray-900">Saved Bills</h2>
+                <button onClick={() => setShowCustomerBills(true)}>
+                  <ReceiptText />
+                </button>
+              </div>
 
-                  return (
-                    <div key={order.id} className="bg-white rounded-xl shadow-md p-6">
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                        <div>
-                          <p className="text-sm text-gray-500">
-                            Order {order.id.slice(0, 8)}… · {new Date(order.created_at).toLocaleString()}
-                          </p>
-                          <p className="font-semibold text-gray-900">{customerName}</p>
-                          <p className="text-sm text-gray-600">{customerPhone}</p>
-                          <p className="text-sm text-gray-600">{customerAddress || 'Address not provided'}</p>
-                          {itemSummary && (
-                            <p className="text-xs text-gray-500 mt-2">Items: {itemSummary}{orderItems.length > 3 ? '…' : ''}</p>
-                          )}
-                        </div>
-                        <div className="text-right space-y-2">
-                          <p className="text-lg font-bold text-blue-600">
-                            ₹{(order.final_amount || 0).toFixed(2)}
-                          </p>
-                          <button
-                            onClick={() => saveBillAsThermalPdf(order, order.id)}
-                            disabled={printingOrderId === order.id}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            <Printer className="h-4 w-4" />
-                            <span>{printingOrderId === order.id ? 'Saving...' : 'Save PDF'}</span>
-                          </button>
-                          <button
-                            onClick={() => printThermalBill(order, order.id)}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
-                          >
-                            <Printer className="h-4 w-4" />
-                            <span>{printingOrderId === order.id ? 'Printing...' : 'Print Bill'}</span>
-                          </button>
+              <div className="space-y-4">
+                {orders.length === 0 ? (
+                  <div className="bg-white p-12 text-center rounded-xl shadow-sm">
+                    <p className="text-gray-600">No bills generated yet.</p>
+                  </div>
+                ) : (
+                  orders.map((order) => {
+                    const orderProfile = order.profiles || {
+                      name: 'N/A',
+                      phone: 'N/A',
+                      address: 'N/A',
+                    };
 
+                    const customerFromTable = (order as OrderWithItems).customers;
+
+                    const customerName =
+                      customerFromTable?.name ||
+                      (order as Order & { customer_name?: string }).customer_name ||
+                      orderProfile.name;
+
+                    const customerPhone =
+                      customerFromTable?.phone ||
+                      (order as Order & { customer_phone?: string }).customer_phone ||
+                      orderProfile.phone;
+
+                    const customerAddress =
+                      customerFromTable?.address ||
+                      (order as Order & { customer_address?: string }).customer_address ||
+                      orderProfile.address;
+
+                    const orderItems = order.order_items || [];
+
+                    const itemSummary = orderItems
+                      .map((item) => `${item.products?.name ?? 'Item'} × ${item.quantity}`)
+                      .slice(0, 3)
+                      .join(', ');
+
+                    return (
+                      <div key={order.id} className="bg-white rounded-xl shadow-md p-6">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                          <div>
+                            <p className="text-sm text-gray-500">
+                              Order {order.id.slice(0, 8)}… · {new Date(order.created_at).toLocaleString()}
+                            </p>
+                            <p className="font-semibold text-gray-900">{customerName}</p>
+                            <p className="text-sm text-gray-600">{customerPhone}</p>
+                            <p className="text-sm text-gray-600">
+                              {customerAddress || 'Address not provided'}
+                            </p>
+
+                            {itemSummary && (
+                              <p className="text-xs text-gray-500 mt-2">
+                                Items: {itemSummary}
+                                {orderItems.length > 3 ? '…' : ''}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="text-right space-y-2">
+                            <p className="text-lg font-bold text-blue-600">
+                              ₹{(order.final_amount || 0)}
+                            </p>
+
+                            <button
+                              onClick={() => saveBillAsThermalPdf(order, order.id)}
+                              disabled={printingOrderId === order.id}
+                              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              <Printer className="h-4 w-4" />
+                              <span>
+                                {printingOrderId === order.id ? 'Saving...' : 'Save PDF'}
+                              </span>
+                            </button>
+
+                            <button
+                              onClick={() => printThermalBill(order, order.id)}
+                              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+                            >
+                              <Printer className="h-4 w-4" />
+                              <span>
+                                {printingOrderId === order.id ? 'Printing...' : 'Print Bill'}
+                              </span>
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })
-              )}
+                    );
+                  })
+                )}
+              </div>
             </div>
-          </div>
+          )
         )}
+
 
         {activeTab === 'products' && (
           <div>
@@ -1661,12 +1730,12 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                       {/* Price + MRP */}
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-lg font-bold text-blue-600">
-                          ₹{product.price.toFixed(2)}
+                          ₹{product.price}
                         </p>
 
                         {product.mrp && (
                           <p className="text-lg font-bold text-blue-600">
-                            Mrp: ₹{product.mrp.toFixed(2)}
+                            Mrp: ₹{product.mrp}
                           </p>
                         )}
                       </div>
@@ -1731,7 +1800,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-bold text-blue-600">
-                              ₹{dayOrders.reduce((sum, o) => sum + (o.final_amount || 0), 0).toFixed(2)}
+                              ₹{dayOrders.reduce((sum, o) => sum + (o.final_amount || 0), 0)}
                             </p>
                           </div>
                         </div>
@@ -1805,7 +1874,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           </div>
                           <div className="flex gap-2 flex-wrap items-center justify-end">
                             {/* Print */}
-                            <button
+                            {/* <button
                               onClick={() => printBillForOrder(order)}
                               disabled={printingOrderId === order.id}
                               title="Print Bill"
@@ -1815,7 +1884,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                               <span className="hidden sm:inline">
                                 {printingOrderId === order.id ? 'Printing...' : 'Print Bill'}
                               </span>
-                            </button>
+                            </button> */}
 
                             {/* Edit */}
                             <button
@@ -1872,7 +1941,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                                   {item.products?.name || 'Unknown Product'} × {item.quantity}
                                 </span>
                                 <span>
-                                  ₹{(item.subtotal || 0).toFixed(2)}
+                                  ₹{(item.subtotal || 0)}
                                 </span>
                               </div>
                             ))
@@ -1886,22 +1955,22 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                         <div className="border-t pt-4">
                           <div className="flex justify-between text-sm">
                             <span>Subtotal</span>
-                            <span>₹{(order.total_amount || 0).toFixed(2)}</span>
+                            <span>₹{(order.total_amount || 0)}</span>
                           </div>
                           <div className="flex justify-between text-sm">
                             <span>Delivery</span>
-                            <span>₹{(order.delivery_charge || 20).toFixed(2)}</span>
+                            <span>₹{(order.delivery_charge || 10)}</span>
                           </div>
                           <div className="flex justify-between text-sm">
                             <span>Discount</span>
                             <span className="text-green-600">
-                              -₹{(order.discount_amount ?? 0).toFixed(2)}
+                              -₹{(order.discount_amount ?? 0)}
                             </span>
                           </div>
                           <div className="flex justify-between font-bold">
                             <span>Total</span>
                             <span className="text-blue-600">
-                              ₹{(order.final_amount || 0).toFixed(2)}
+                              ₹{(order.final_amount || 0)}
                             </span>
                           </div>
                         </div>
@@ -2167,7 +2236,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                               {day.date}
                             </span>
                             <span className="text-sm font-bold text-blue-600">
-                              ₹{day.sales.toFixed(2)}
+                              ₹{day.sales}
                             </span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-2">
@@ -2234,7 +2303,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                             </p>
                           </div>
                           <p className="font-bold text-blue-600">
-                            ₹{product.revenue.toFixed(2)}
+                            ₹{product.revenue}
                           </p>
                         </div>
                       ))
@@ -2253,7 +2322,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 <div>
                   <p className="text-gray-600 text-sm">Total Revenue</p>
                   <p className="text-3xl font-bold text-blue-600 mt-2">
-                    ₹{stats.totalRevenue.toFixed(2)}
+                    ₹{stats.totalRevenue}
                   </p>
                 </div>
                 <div>
@@ -2261,7 +2330,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   <p className="text-3xl font-bold text-green-600 mt-2">
                     ₹
                     {stats.totalOrders > 0
-                      ? (stats.totalRevenue / stats.totalOrders).toFixed(2)
+                      ? (stats.totalRevenue / stats.totalOrders)
                       : '0.00'}
                   </p>
                 </div>
@@ -2276,6 +2345,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       {showEditOrderModal && editingOrder && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+
+            {/* Header */}
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
               <h2 className="text-2xl font-bold text-gray-900">Edit Order</h2>
               <button
@@ -2287,23 +2358,45 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </div>
 
             <div className="p-6 space-y-6">
+
+              {/* Order Items */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Order Items</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Order Items
+                </h3>
+
                 <div className="space-y-3">
                   {editingOrderItems.map((item) => (
                     <div
                       key={item.id}
                       className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
                     >
+                      {/* Product Info */}
                       <div className="flex-1">
                         <p className="font-semibold text-gray-900">
                           {item.products?.name || 'Unknown Product'}
                         </p>
-                        <p className="text-sm text-gray-600">
-                          ₹{item.price.toFixed(2)} each
-                        </p>
+
+                        {/* Editable Price */}
+                        <div className="flex items-center space-x-2 mt-1">
+                          <span className="text-sm text-gray-600">₹</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.price}
+                            onChange={(e) =>
+                              updateOrderItemPrice(item.id, Number(e.target.value))
+                            }
+                            className="w-24 border rounded px-2 py-1 text-sm"
+                          />
+                          <span className="text-sm text-gray-600">each</span>
+                        </div>
                       </div>
+
+                      {/* Quantity + Subtotal */}
                       <div className="flex items-center space-x-4">
+                        {/* Quantity */}
                         <div className="flex items-center space-x-2">
                           <button
                             onClick={() =>
@@ -2313,9 +2406,11 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                           >
                             -
                           </button>
+
                           <span className="w-12 text-center font-semibold">
                             {item.quantity}
                           </span>
+
                           <button
                             onClick={() =>
                               updateOrderItemQuantity(item.id, item.quantity + 1)
@@ -2325,9 +2420,13 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                             +
                           </button>
                         </div>
+
+                        {/* Subtotal */}
                         <p className="font-bold text-gray-900 w-24 text-right">
-                          ₹{item.subtotal.toFixed(2)}
+                          ₹{item.subtotal}
                         </p>
+
+                        {/* Remove */}
                         <button
                           onClick={() => removeOrderItem(item.id)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
@@ -2337,6 +2436,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                       </div>
                     </div>
                   ))}
+
                   {editingOrderItems.length === 0 && (
                     <p className="text-center text-gray-500 py-8">
                       No items in this order
@@ -2345,35 +2445,38 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                 </div>
               </div>
 
+              {/* Totals */}
               <div className="border-t pt-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Subtotal</span>
-                    <span className="text-gray-900">
-                      ₹{recalculateOrderTotals().subtotal.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Delivery Charge</span>
-                    <span className="text-gray-900">
-                      ₹{recalculateOrderTotals().deliveryCharge.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Discount</span>
-                    <span className="text-green-600">
-                      -₹{recalculateOrderTotals().discount.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between font-bold text-lg pt-2 border-t">
-                    <span className="text-gray-900">Final Amount</span>
-                    <span className="text-blue-600">
-                      ₹{recalculateOrderTotals().finalAmount.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
+                {(() => {
+                  const totals = recalculateOrderTotals();
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Subtotal</span>
+                        <span>₹{totals.subtotal}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span>Delivery</span>
+                        <span>₹{totals.deliveryCharge}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span>Discount</span>
+                        <span className="text-green-600">
+                          -₹{totals.discount}
+                        </span>
+                      </div>
+                      <div className="flex justify-between font-bold text-lg pt-2 border-t">
+                        <span>Final Amount</span>
+                        <span className="text-blue-600">
+                          ₹{totals.finalAmount}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
+              {/* Buttons */}
               <div className="flex space-x-4 pt-4">
                 <button
                   onClick={saveOrderChanges}
@@ -2392,6 +2495,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </div>
         </div>
       )}
+
 
       {showProductModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">

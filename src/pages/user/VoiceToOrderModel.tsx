@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Mic, X, Upload } from 'lucide-react';
-import { Product } from '../lib/supabase';
+import { Product } from '../../lib/supabase';
 
 interface Props {
   open: boolean;
@@ -64,35 +64,65 @@ export default function VoiceToOrderModal({ open, onClose, products, onAddItems 
 
   // Parse transcript to cart items
   const parseOrder = () => {
-    const cleanText = text.toLowerCase().replace(/[^a-z0-9\s]/g, '');
-    const words = cleanText.split(' ');
+    const cleanText = text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, ' ');
+  
+    // Split orders by 'and'
+    const parts = cleanText.split(/\band\b|,/);
+  
     const results: { product: Product; quantity: number }[] = [];
-
-    products.forEach((product) => {
-      const productWords = product.name.toLowerCase().split(' ');
-      const isMatch = productWords.every((w) => cleanText.includes(w));
-      if (isMatch) {
-        let quantity = 1;
-
-        // numeric quantities
-        words.forEach((word) => {
-          if (!isNaN(Number(word))) quantity = Number(word);
+  
+    parts.forEach((part) => {
+      const words = part.trim().split(' ');
+  
+      if (!words.length) return;
+  
+      // Detect quantity
+      let quantity = 1;
+  
+      words.forEach((w) => {
+        if (!isNaN(Number(w))) quantity = Number(w);
+        if (numberMap[w]) quantity = numberMap[w];
+      });
+  
+      // Remove quantity words
+      const productWords = words.filter(
+        (w) => isNaN(Number(w)) && !numberMap[w]
+      );
+  
+      const productText = productWords.join(' ');
+  
+      // Fuzzy match product
+      let bestMatch: Product | null = null;
+      let bestScore = 0;
+  
+      products.forEach((product) => {
+        const name = product.name.toLowerCase();
+  
+        let score = 0;
+  
+        productWords.forEach((pw) => {
+          if (name.includes(pw)) score++;
         });
-
-        // word quantities
-        words.forEach((word) => {
-          if (numberMap[word]) quantity = numberMap[word];
-        });
-
-        results.push({ product, quantity });
+  
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = product;
+        }
+      });
+  
+      if (bestMatch) {
+        results.push({ product: bestMatch, quantity });
       }
     });
-
+  
     if (results.length === 0) {
       alert('No matching product found');
       return;
     }
-
+  
     onAddItems(results);
     onClose();
   };

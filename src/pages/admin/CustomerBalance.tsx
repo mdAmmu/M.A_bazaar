@@ -249,12 +249,12 @@ export default function CustomerBalance() {
                         }
                       >
                         {entry.type === "order" ? "+" : "-"}₹
-                        {entry.amount.toFixed(2)}
+                        {entry.amount}
                       </span>
                     )}
 
                     <span className="font-bold">
-                      ₹{runningBalance.toFixed(2)}
+                      ₹{runningBalance}
                     </span>
                   </div>
                 </div>
@@ -321,9 +321,10 @@ export default function CustomerBalance() {
             className="p-4 border rounded cursor-pointer bg-white shadow-sm"
           >
             <p className="font-semibold">{c.name}</p>
-            <p>Total: ₹{c.totalOrders.toFixed(2)}</p>
-            <p>Balance: ₹{c.balance.toFixed(2)}</p>
+            <p>Total: ₹{c.totalOrders}</p>
+            <p>Balance: ₹{c.balance}</p>
           </div>
+        
         ))}
 
       {selectedCustomer && renderLedger()}

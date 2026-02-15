@@ -20,7 +20,7 @@ export default function Checkout({ onNavigate }: CheckoutProps) {
   const [placing, setPlacing] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(false);
 
-  const DELIVERY_CHARGE = 20;
+  const DELIVERY_CHARGE = 10;
   const DISCOUNT = 0;
 
   useEffect(() => {
@@ -205,12 +205,12 @@ export default function Checkout({ onNavigate }: CheckoutProps) {
                     {item.products.name}
                   </h3>
                   <p className="text-sm text-gray-600">
-                  ₹{Number(item.products.price).toFixed(2)} x {item.quantity}
+                  ₹{Number(item.products.price)} x {item.quantity}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="font-bold text-gray-900">
-                   ₹{Number((item.products.price * item.quantity).toFixed(2))}
+                   ₹{Number((item.products.price * item.quantity))}
                   </p>
                 </div>
               </div>
@@ -226,16 +226,16 @@ export default function Checkout({ onNavigate }: CheckoutProps) {
             <div className="flex justify-between text-gray-700">
               <span>Total Amount</span>
               <span className="font-semibold">
-               ₹{Number(getTotalAmount().toFixed(2))}
+               ₹{Number(getTotalAmount())}
               </span>
             </div>
             <div className="flex justify-between text-gray-700">
               <span>Delivery Charge</span>
-              <span className="font-semibold">₹{Number(DELIVERY_CHARGE.toFixed(2))}</span>
+              <span className="font-semibold">₹{Number(DELIVERY_CHARGE)}</span>
             </div>
             <div className="flex justify-between text-green-600">
               <span>Discount</span>
-              <span className="font-semibold">-₹{Number(DISCOUNT.toFixed(2))}</span>
+              <span className="font-semibold">-₹{Number(DISCOUNT)}</span>
             </div>
             <div className="border-t border-gray-200 pt-3 mt-3">
               <div className="flex justify-between items-center">
@@ -243,7 +243,7 @@ export default function Checkout({ onNavigate }: CheckoutProps) {
                   Final Amount
                 </span>
                 <span className="text-2xl font-bold text-blue-600">
-                  ₹{Number(getFinalAmount().toFixed(2))}
+                  ₹{Number(getFinalAmount())}
                 </span>
               </div>
             </div>

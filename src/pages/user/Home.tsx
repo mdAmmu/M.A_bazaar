@@ -15,7 +15,7 @@ interface HomeProps {
 
 type OrderItemWithProduct = OrderItem & { products: Product };
 
-export default function Home({ adminMode = false, orderId, onNavigate }: HomeProps){
+export default function Home({ adminMode = false, orderId, onNavigate }: HomeProps) {
   const { profile } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
@@ -30,7 +30,8 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
   const [finalizing, setFinalizing] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
 
-  const navigate = onNavigate ?? (() => {});
+
+  const navigate = onNavigate ?? (() => { });
   const cartItemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
 
@@ -52,33 +53,50 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
 
   useEffect(() => {
     let filtered = products;
-
-    // Apply category filter
+  
+    // ✅ Category Filter
     if (selectedCategory) {
       filtered = filtered.filter(
-        (product) => product.category?.toLowerCase() === selectedCategory.toLowerCase()
+        (p) =>
+          p.category?.toLowerCase() === selectedCategory.toLowerCase()
       );
     }
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim();
-      const numericQ = q.replace(/[^\d]/g, '');
+  
+    // ✅ Search Filter (Name + ID)
+    const query = searchQuery.trim().toLowerCase();
+  
+    if (query) {
+      const numericQuery = query.replace(/[^\d]/g, "");
+  
       filtered = filtered.filter((product) => {
-        const no = product.product_no;
-        if (no === undefined || no === null) return false;
-        // Search only by numeric Product ID (allow partial match)
-        return String(no).includes(numericQ);
+        // Match Name
+        const matchName = product.name
+          ?.toLowerCase()
+          .includes(query);
+  
+        // Match Item ID
+        const matchId =
+          numericQuery &&
+          product.item_id !== undefined &&
+          product.item_id !== null &&
+          String(product.item_id).includes(numericQuery);
+  
+        return matchName || matchId;
       });
     }
-
+  
     setFilteredProducts(filtered);
-  }, [searchQuery, selectedCategory, products]);
+  }, [products, selectedCategory, searchQuery]);
 
   // Get unique categories from products
   const categories = Array.from(
     new Set(products.map((p) => p.category).filter((c): c is string => Boolean(c)))
   ).sort();
+
+  useEffect(() => {
+    fetchProducts();
+    if (!adminMode) fetchCartItems();
+  }, []);
 
   const fetchProducts = async () => {
     try {
@@ -86,11 +104,13 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
         .from('products')
         .select('*')
         .order('created_at', { ascending: false });
+
       if (error) throw error;
+
       setProducts(data || []);
       setFilteredProducts(data || []);
-    } catch (error) {
-      console.error('Error fetching products:', error);
+    } catch (err) {
+      console.error('Error fetching products:', err);
     } finally {
       setLoading(false);
     }
@@ -162,7 +182,7 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
   const addToCart = async (product: Product) => {
     try {
       const quantity = quantities[product.id] || 1;
-  
+
       // 🔴 ADMIN ORDER FLOW (NEW)
       if (adminMode && orderId) {
         const { error } = await supabase.from("order_items").insert([
@@ -174,26 +194,26 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
             subtotal: product.price * quantity,
           },
         ]);
-  
+
         if (error) throw error;
-  
+
         setQuantities((prev) => ({ ...prev, [product.id]: 1 }));
         await fetchOrderItems();
         await fetchOrderDetails();
         return;
       }
-  
+
       // 🟢 USER CART FLOW (EXISTING CODE)
       const existingItem = cartItems.find(
         (item) => item.product_id === product.id
       );
-  
+
       if (existingItem) {
         const { error } = await supabase
           .from("cart_items")
           .update({ quantity: existingItem.quantity + quantity })
           .eq("id", existingItem.id);
-  
+
         if (error) throw error;
       } else {
         const { error } = await supabase.from("cart_items").insert([
@@ -203,10 +223,10 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
             quantity,
           },
         ]);
-  
+
         if (error) throw error;
       }
-  
+
       setQuantities((prev) => ({ ...prev, [product.id]: 1 }));
       await fetchCartItems();
     } catch (error) {
@@ -214,7 +234,7 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
       alert("Failed to add to cart");
     }
   };
-  
+
   const calculateAdminTotals = () => {
     const subtotal = orderItems.reduce(
       (sum, item) => sum + (item.subtotal ?? item.price * item.quantity),
@@ -226,95 +246,18 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
     return { subtotal, deliveryCharge, discount, finalAmount };
   };
 
-  const printAdminBill = (order: Order, items: OrderItemWithProduct[]) => {
-    const billNo = `INV-${new Date().getTime()}`;
-    const w = window.open('', '_blank', 'width=900,height=700');
-    if (!w) {
-      alert('Popup blocked. Please allow popups to print.');
-      return;
-    }
-
-    const rows = items.map((it) => `
-      <tr>
-        <td style="padding:8px;border-bottom:1px solid #eee;">${it.products?.name ?? 'Unknown'}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${it.quantity}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">$${Number(it.price).toFixed(2)}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">$${Number(it.subtotal ?? it.price * it.quantity).toFixed(2)}</td>
-      </tr>
-    `).join('');
-
-    w.document.write(`
-      <html>
-        <head>
-          <title>${billNo}</title>
-          <meta charset="utf-8" />
-        </head>
-        <body style="font-family: Arial, sans-serif; padding: 24px;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-            <div>
-              <h1 style="margin:0;">Invoice</h1>
-              <div style="margin-top:8px;color:#555;">Bill No: <strong>${billNo}</strong></div>
-              <div style="margin-top:4px;color:#555;">Order: ${order.id}</div>
-              <div style="margin-top:4px;color:#555;">Printed: ${new Date().toLocaleString()}</div>
-            </div>
-            <div style="text-align:right;">
-              <div style="font-weight:bold;">Customer</div>
-              <div>${order.customer_name ?? ''}</div>
-              <div>${order.customer_phone ?? ''}</div>
-              <div>${order.customer_address ?? ''}</div>
-            </div>
-          </div>
-
-          <h2 style="margin-top:24px;">Items</h2>
-          <table style="width:100%;border-collapse:collapse;">
-            <thead>
-              <tr>
-                <th style="text-align:left;padding:8px;border-bottom:2px solid #ddd;">Item</th>
-                <th style="text-align:right;padding:8px;border-bottom:2px solid #ddd;">Qty</th>
-                <th style="text-align:right;padding:8px;border-bottom:2px solid #ddd;">Price</th>
-                <th style="text-align:right;padding:8px;border-bottom:2px solid #ddd;">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows}
-            </tbody>
-          </table>
-
-          <div style="margin-top:24px;width:100%;display:flex;justify-content:flex-end;">
-            <div style="width:280px;">
-              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee;">
-                <span>Subtotal</span>
-                <strong>$${Number(order.total_amount ?? 0).toFixed(2)}</strong>
-              </div>
-              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee;">
-                <span>Delivery</span>
-                <strong>$${Number(order.delivery_charge ?? 0).toFixed(2)}</strong>
-              </div>
-              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:2px solid #333;">
-                <span>Final</span>
-                <strong>$${Number(order.final_amount ?? 0).toFixed(2)}</strong>
-              </div>
-            </div>
-          </div>
-        </body>
-      </html>
-    `);
-    w.document.close();
-    w.focus();
-    w.print();
-  };
 
   const finalizeAdminOrder = async () => {
     if (!adminMode || !orderId || orderItems.length === 0) {
       alert('Add at least one item before generating the bill.');
       return;
     }
-  
+
     setFinalizing(true);
-  
+
     try {
       const { subtotal, finalAmount } = calculateAdminTotals();
-  
+
       const { data: updatedOrder, error } = await supabase
         .from('orders')
         .update({
@@ -325,18 +268,18 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
         .eq('id', orderId)
         .select()
         .single();
-  
+
       if (error || !updatedOrder) {
         throw error || new Error('Failed to update order');
       }
-  
+
       setOrderDetails(updatedOrder as Order);
-  
+
       alert('Order saved and bill generated');
-  
+
       // ✅ Redirect AFTER successful save
       navigate('admin');
-  
+
     } catch (error) {
       console.error('Error finalizing admin order:', error);
       alert('Failed to finalize order');
@@ -344,7 +287,7 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
       setFinalizing(false);
     }
   };
-  
+
 
   const addVoiceItemsToCart = async (
     items: { product: Product; quantity: number }[]
@@ -408,7 +351,7 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
 
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => {setVoiceOpen(true); }}
+                onClick={() => { setVoiceOpen(true); }}
                 title="Voice to Order"
                 className="flex items-center justify-center gap-2 bg-blue-600 text-white px-2 py-2 sm:px-4 sm:py-2 rounded-full sm:rounded-lg font-semibold hover:bg-blue-700 transition"
               >
@@ -445,17 +388,21 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
           </div>
 
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+
             <input
               type="text"
-              placeholder="Search by Product ID..."
+              placeholder="Search by Product ID or Name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              className="w-full pl-10 pr-10 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
             />
-            <button className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded-full transition">
-              <Mic className="h-5 w-5 text-gray-400" />
+
+            <button className="absolute right-3 top-1/2 -translate-y-1/2">
+              <Mic className="text-gray-400" />
             </button>
+
           </div>
 
           {/* Categories Section */}
@@ -550,88 +497,59 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
         <h2 className="text-2xl font-bold text-gray-900 mb-6">
           {selectedCategory ? `${selectedCategory} Products` : 'All Products'}
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredProducts.map((product) => (
-            <div
-              key={product.id}
-              className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition"
-            >
-              {/* Image Div */}
-              <div className="w-full h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
-                <img
-                  src={product.image_url}
-                  alt={product.name}
-                  loading="lazy"
-                  decoding="async"
-                  width="300"
-                  height="300"
-                  className="w-full h-full object-contain"
-                />
-              </div>
-
-              <div className="p-4">
-                {/* Product Name */}
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <h3 className="font-semibold text-gray-900">{product.name}</h3>
-                  {product.product_no !== undefined && product.product_no !== null && (
-                    <span className="shrink-0 text-xs font-semibold px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-                      ID: {product.product_no}
-                    </span>
-                  )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-6">
+          {filteredProducts.length === 0 ? (
+            <p className="col-span-full text-center text-gray-500 py-6">
+              No products match your search.
+            </p>
+          ) : (
+            filteredProducts.map((product) => (
+              <div
+                key={product.id}
+                className="bg-white rounded-xl shadow-md overflow-hidden"
+              >
+                <div className="w-full h-48 bg-gray-100 flex items-center justify-center overflow-hidden">
+                  <img
+                    src={product.image_url}
+                    alt={product.name}
+                    loading="lazy"
+                    className="w-full h-full object-contain"
+                  />
                 </div>
 
-                {/* Price and MRP Row */}
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-lg font-bold text-blue-600">
-                    ₹{Number(product.price).toFixed(2)}
-                  </p>
-                  {product.mrp !== undefined && product.mrp !== null && (
-                    <p className="text-lg font-bold text-blue-600 ">
-                      ₹{Number(product.mrp).toFixed(2)}
-                    </p>
-                  )}
-                </div>
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <h3 className="font-semibold text-gray-900">
+                      {product.name}
+                    </h3>
 
-
-                {/* Quantity Div */}
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-gray-700">Quantity:</span>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => updateQuantity(product.id, -1)}
-                      className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition"
-                    >
-                      <Minus className="h-4 w-4 text-gray-700" />
-                    </button>
-                    <span className="w-8 text-center font-semibold">
-                      {quantities[product.id] || 1}
-                    </span>
-                    <button
-                      onClick={() => updateQuantity(product.id, 1)}
-                      className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition"
-                    >
-                      <Plus className="h-4 w-4 text-gray-700" />
-                    </button>
+                    {product.item_id != null && (
+                      <span className="text-xs font-semibold px-2 py-1 rounded-full bg-gray-100">
+                        Item ID: {product.item_id}
+                      </span>
+                    )}
                   </div>
+
+                  <p className="text-lg font-bold text-blue-600 mb-2">
+                    ₹{product.price}
+                  </p>
+
+                  <p className="text-sm text-gray-600 mb-4">
+                    Stock: {product.stock}
+                  </p>
+
+                  <button
+                    onClick={() => addToCart(product)}
+                    disabled={!profile || product.stock === 0}
+                    className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+                  >
+                    Add to Cart
+                  </button>
                 </div>
-
-                {/* Add to Cart Button Div */}
-                <button
-                  onClick={() => addToCart(product)}
-                  className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition text-sm uppercase tracking-wide"
-                >
-                  ADD TO CART
-                </button>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
-
-        {filteredProducts.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-gray-500">No products found</p>
-          </div>
-        )}
       </main>
 
       <VoiceToOrderModal
@@ -644,3 +562,302 @@ export default function Home({ adminMode = false, orderId, onNavigate }: HomePro
     </div>
   );
 }
+
+
+
+// import { useState, useEffect } from 'react';
+// import { ShoppingCart, User, Search, Mic, ReceiptText } from 'lucide-react';
+// import { useAuth } from '../../context/AuthContext';
+// import { supabase, Product, CartItem, OrderItem, Order } from '../../lib/supabase';
+// import VoiceToOrderModal from '../user/VoiceToOrderModel';
+
+// type Page = 'home' | 'profile' | 'cart' | 'checkout' | 'admin' | 'bills' | 'createOrder' | 'adminOrder';
+
+// interface HomeProps {
+//   adminMode?: boolean;
+//   orderId?: string;
+//   onNavigate?: (page: Page, id?: string) => void;
+// }
+
+// type OrderItemWithProduct = OrderItem & { products: Product };
+
+// export default function Home({ adminMode = false, orderId, onNavigate }: HomeProps) {
+
+//   const { profile } = useAuth();
+
+//   const [products, setProducts] = useState<Product[]>([]);
+//   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+//   const [searchQuery, setSearchQuery] = useState('');
+//   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+//   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+//   const [orderItems, setOrderItems] = useState<OrderItemWithProduct[]>([]);
+//   const [orderDetails, setOrderDetails] = useState<Order | null>(null);
+//   const [loading, setLoading] = useState(true);
+//   const [voiceOpen, setVoiceOpen] = useState(false);
+
+//   const navigate = onNavigate ?? (() => { });
+//   const cartItemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+
+//   /* ---------------- FETCH DATA ---------------- */
+
+//   useEffect(() => {
+//     fetchProducts();
+//     if (!adminMode) fetchCartItems();
+//   }, []);
+
+//   useEffect(() => {
+//     if (adminMode && orderId) {
+//       fetchOrderDetails();
+//       fetchOrderItems();
+//     }
+//   }, [adminMode, orderId]);
+
+//   /* ---------------- SEARCH + CATEGORY FILTER ---------------- */
+
+//   useEffect(() => {
+
+//     let filtered = [...products];
+
+//     // CATEGORY FILTER
+//     if (selectedCategory) {
+//       filtered = filtered.filter(
+//         p => p.category?.toLowerCase() === selectedCategory.toLowerCase()
+//       );
+//     }
+
+//     // SEARCH FILTER (ID + NAME)
+//     const query = searchQuery.trim().toLowerCase();
+
+//     if (query) {
+
+//       const numericQuery = query.replace(/[^\d]/g, '');
+
+//       filtered = filtered.filter(product => {
+
+//         const matchName =
+//           product.name?.toLowerCase().includes(query);
+
+//         const matchId =
+//           numericQuery &&
+//           product.item_id != null &&
+//           String(product.item_id).includes(numericQuery);
+
+//         return matchName || matchId;
+//       });
+//     }
+
+//     setFilteredProducts(filtered);
+
+//   }, [products, selectedCategory, searchQuery]);
+
+//   /* ---------------- API CALLS ---------------- */
+
+//   const fetchProducts = async () => {
+//     try {
+//       const { data, error } = await supabase
+//         .from('products')
+//         .select('*')
+//         .order('created_at', { ascending: false });
+
+//       if (error) throw error;
+
+//       setProducts(data || []);
+//       setFilteredProducts(data || []);
+
+//     } catch (err) {
+//       console.error(err);
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+
+//   const fetchCartItems = async () => {
+//     if (adminMode) return;
+
+//     const { data } = await supabase
+//       .from('cart_items')
+//       .select('*')
+//       .eq('user_id', profile?.id);
+
+//     setCartItems(data || []);
+//   };
+
+//   const fetchOrderItems = async () => {
+//     if (!adminMode || !orderId) return;
+
+//     const { data } = await supabase
+//       .from('order_items')
+//       .select(`*, products (*)`)
+//       .eq('order_id', orderId);
+
+//     setOrderItems((data as OrderItemWithProduct[]) || []);
+//   };
+
+//   const fetchOrderDetails = async () => {
+//     if (!adminMode || !orderId) return;
+
+//     const { data } = await supabase
+//       .from('orders')
+//       .select('*')
+//       .eq('id', orderId)
+//       .single();
+
+//     setOrderDetails(data as Order);
+//   };
+
+//   const addToCart = async (product: Product) => {
+
+//     const existing = cartItems.find(c => c.product_id === product.id);
+
+//     if (existing) {
+//       await supabase
+//         .from('cart_items')
+//         .update({ quantity: existing.quantity + 1 })
+//         .eq('id', existing.id);
+//     } else {
+//       await supabase.from('cart_items').insert([{
+//         user_id: profile?.id,
+//         product_id: product.id,
+//         quantity: 1
+//       }]);
+//     }
+
+//     fetchCartItems();
+//   };
+
+//   /* ---------------- LOADING ---------------- */
+
+//   if (loading) {
+//     return (
+//       <div className="min-h-screen flex items-center justify-center">
+//         Loading...
+//       </div>
+//     );
+//   }
+
+//   /* ---------------- UI ---------------- */
+
+//   const categories = Array.from(
+//     new Set(products.map(p => p.category).filter(Boolean))
+//   );
+
+//   return (
+//     <div className="min-h-screen bg-gray-50">
+
+//       {/* HEADER */}
+//       <header className="bg-white shadow-sm sticky top-0 z-10">
+
+//         <div className="max-w-7xl mx-auto px-4 py-4">
+
+//           {/* TOP BAR */}
+//           <div className="flex justify-between mb-4">
+
+//             <div className="flex items-center gap-3">
+//               <User />
+//               <div>
+//                 <p>Hello</p>
+//                 <p className="font-semibold">{profile?.name}</p>
+//               </div>
+//             </div>
+
+//             <div className="flex gap-4">
+
+//               <button onClick={() => setVoiceOpen(true)}>
+//                 <Mic />
+//               </button>
+
+//               <button onClick={() => navigate('bills')}>
+//                 <ReceiptText />
+//               </button>
+
+//               <button onClick={() => navigate('cart')}>
+//                 <ShoppingCart />
+//                 {cartItemCount > 0 && <span>{cartItemCount}</span>}
+//               </button>
+
+//             </div>
+//           </div>
+
+//           {/* SEARCH BOX */}
+//           <div className="relative">
+
+//             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+
+//             <input
+//               type="text"
+//               placeholder="Search by Product ID or Name..."
+//               value={searchQuery}
+//               onChange={(e) => setSearchQuery(e.target.value)}
+//               className="w-full pl-10 pr-10 py-3 border rounded-lg"
+//             />
+
+//           </div>
+
+//           {/* CATEGORY UI */}
+//           <div className="flex gap-3 py-3 overflow-x-auto">
+
+//             <button
+//               onClick={() => setSelectedCategory(null)}
+//               className={selectedCategory === null ? "bg-blue-600 text-white px-4 py-2 rounded-full" : "bg-gray-200 px-4 py-2 rounded-full"}
+//             >
+//               All
+//             </button>
+
+//             {categories.map(cat => (
+//               <button
+//                 key={cat}
+//                 onClick={() => setSelectedCategory(cat)}
+//                 className={selectedCategory === cat ? "bg-blue-600 text-white px-4 py-2 rounded-full" : "bg-gray-200 px-4 py-2 rounded-full"}
+//               >
+//                 {cat}
+//               </button>
+//             ))}
+//           </div>
+
+//         </div>
+//       </header>
+
+//       {/* PRODUCTS GRID */}
+//       <main className="max-w-7xl mx-auto px-4 py-6">
+
+//         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+
+//           {filteredProducts.length === 0 ? (
+//             <p>No products found</p>
+//           ) : (
+//             filteredProducts.map(product => (
+
+//               <div key={product.id} className="bg-white rounded-xl shadow-md p-4">
+
+//                 <img src={product.image_url} className="h-40 w-full object-contain" />
+
+//                 <h3 className="font-semibold mt-2">{product.name}</h3>
+
+//                 <p className="text-sm">Item ID: {product.item_id}</p>
+
+//                 <p className="font-bold text-blue-600">₹{product.price}</p>
+
+//                 <button
+//                   onClick={() => addToCart(product)}
+//                   className="w-full bg-blue-600 text-white py-2 mt-2 rounded-lg"
+//                 >
+//                   Add to Cart
+//                 </button>
+
+//               </div>
+//             ))
+//           )}
+
+//         </div>
+//       </main>
+
+//       <VoiceToOrderModal
+//         open={voiceOpen}
+//         onClose={() => setVoiceOpen(false)}
+//         products={products}
+//         onAddItems={() => { }}
+//       />
+
+//     </div>
+//   );
+// }
