@@ -1518,7 +1518,9 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         )}
 
         {showCustomerBills ? (
-          <CustomerBills orders={orders} />
+          <CustomerBills 
+            orders={orders} 
+            onBack={() => setShowCustomerBills(false)} />
         ) : (
           activeTab === 'bills' && (
             <div>
@@ -1595,7 +1597,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                             <button
                               onClick={() => saveBillAsThermalPdf(order, order.id)}
                               disabled={printingOrderId === order.id}
-                              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                              className="inline-flex items-center justify-center gap-2 mr-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
                             >
                               <Printer className="h-4 w-4" />
                               <span>

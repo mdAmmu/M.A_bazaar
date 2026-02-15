@@ -1,7 +1,7 @@
 
 
 // ===== IMPORTS =====
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
     Package,
     Users,
@@ -89,7 +89,7 @@ export default function EmployeeDashboard() {
     const [addingCustomer, setAddingCustomer] = useState(false);
     const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
 
-    const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+    // const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
     const [customerSearchQuery, setCustomerSearchQuery] = useState("");
     const [productSearchQuery, setProductSearchQuery] = useState("");
@@ -100,6 +100,9 @@ export default function EmployeeDashboard() {
     const [discount, setDiscount] = useState(0);
     const [editingTotalId, setEditingTotalId] = useState<string | null>(null);
     // const [deliveryCharge, setDeliveryCharge] = useState(10);
+    const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+    const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+
 
 
     // ===== CATEGORY FILTER =====
@@ -160,13 +163,35 @@ export default function EmployeeDashboard() {
         }
     }, [employeeId]);
 
-    const toggleOrder = (orderId: string) => {
-        setExpandedOrders((prev) => {
-            const next = new Set(prev);
-            next.has(orderId) ? next.delete(orderId) : next.add(orderId);
-            return next;
+    const groupedOrders = useMemo(() => {
+        const map = new Map<string, typeof orders>();
+
+        orders.forEach((order) => {
+            const dateKey = new Date(order.created_at).toDateString();
+
+            if (!map.has(dateKey)) {
+                map.set(dateKey, []);
+            }
+
+            map.get(dateKey)!.push(order);
         });
+
+        return Array.from(map.entries());
+    }, [orders]);
+
+
+    const toggleDay = (day: string) => {
+        const newSet = new Set(expandedDays);
+        newSet.has(day) ? newSet.delete(day) : newSet.add(day);
+        setExpandedDays(newSet);
     };
+
+    const toggleOrder = (id: string) => {
+        const newSet = new Set(expandedOrders);
+        newSet.has(id) ? newSet.delete(id) : newSet.add(id);
+        setExpandedOrders(newSet);
+    };
+
 
     const fetchProducts = async () => {
         const { data } = await supabase.from("products").select("*");
@@ -337,10 +362,10 @@ export default function EmployeeDashboard() {
             setTab("customers");
             return;
         }
-    
+
         setCart((prev) => {
             const exist = prev.find((p) => p.product.id === product.id);
-    
+
             if (exist) {
                 return prev.map((p) =>
                     p.product.id === product.id
@@ -348,7 +373,7 @@ export default function EmployeeDashboard() {
                         : p
                 );
             }
-    
+
             return [...prev, { product, qty: 1, price: product.price }];
         });
     };
@@ -357,10 +382,10 @@ export default function EmployeeDashboard() {
         setCart((prev) =>
             prev.map((item) => {
                 if (item.product.id !== productId) return item;
-    
+
                 const newUnitPrice =
                     item.qty > 0 ? newTotal / item.qty : 0;
-    
+
                 return {
                     ...item,
                     price: newUnitPrice,
@@ -1046,7 +1071,7 @@ export default function EmployeeDashboard() {
                                                             }
                                                             onBlur={() => setEditingTotalId(null)}
                                                             className="ml-4 border rounded px-2 py-1 w-28"
-                                                            
+
                                                         />
                                                     ) : (
                                                         <span
@@ -1128,160 +1153,127 @@ export default function EmployeeDashboard() {
                                 <p className="text-gray-600">No orders yet.</p>
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                {orders.map((order) => {
-                                    const isOpen = expandedOrders.has(order.id);
-                                    const customer = order.customers;
-                                    const items = order.order_items || [];
+                            <div className="space-y-6">
+                                {groupedOrders.map(([day, dayOrders]) => {
+                                    const isDayOpen = expandedDays.has(day);
 
                                     return (
-                                        <div
-                                            key={order.id}
-                                            className="bg-white rounded-xl shadow-md overflow-hidden"
-                                        >
-                                            {/* ===== Order Header (Clickable) ===== */}
+                                        <div key={day} className="bg-white rounded-xl shadow-md overflow-hidden">
+
+                                            {/* ===== Day Header ===== */}
                                             <div
-                                                onClick={() => toggleOrder(order.id)}
-                                                className="cursor-pointer px-6 py-4 flex justify-between items-center hover:bg-gray-50 transition"
+                                                onClick={() => toggleDay(day)}
+                                                className="cursor-pointer px-6 py-4 flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition"
                                             >
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                                        <Package className="h-6 w-6 text-blue-600" />
-                                                    </div>
-
-                                                    <div>
-                                                        <p className="font-semibold text-gray-900">
-                                                            {customer?.name || order.id.slice(0, 8)}
-                                                        </p>
-
-                                                        <div className="flex gap-4 text-sm text-gray-600 mt-1">
-                                                            <span className="flex items-center gap-1">
-                                                                <Calendar className="h-4 w-4" />
-                                                                {new Date(order.created_at).toLocaleDateString("en-US", {
-                                                                    month: "short",
-                                                                    day: "numeric",
-                                                                    year: "numeric",
-                                                                    hour: "numeric",
-                                                                    minute: "2-digit",
-                                                                })}
-                                                            </span>
-
-                                                            <span className="flex items-center gap-1">
-                                                                ₹{order.final_amount}
-                                                            </span>
-                                                        </div>
-                                                    </div>
+                                                <div className="flex items-center gap-3">
+                                                    <Calendar className="h-5 w-5 text-blue-600" />
+                                                    <h3 className="font-semibold text-lg">
+                                                        {new Date(day).toLocaleDateString("en-US", {
+                                                            weekday: "long",
+                                                            month: "short",
+                                                            day: "numeric",
+                                                            year: "numeric",
+                                                        })}
+                                                    </h3>
                                                 </div>
 
-                                                <div className="flex items-center gap-4">
-                                                    <span
-                                                        className={`px-3 py-1 rounded-full text-sm font-semibold ${order.status === "completed"
-                                                            ? "bg-green-100 text-green-800"
-                                                            : order.status === "pending"
-                                                                ? "bg-yellow-100 text-yellow-800"
-                                                                : "bg-gray-100 text-gray-800"
-                                                            }`}
-                                                    >
-                                                        {order.status}
-                                                    </span>
-
-                                                    {isOpen ? (
-                                                        <ChevronUp className="h-5 w-5 text-gray-600" />
-                                                    ) : (
-                                                        <ChevronDown className="h-5 w-5 text-gray-600" />
-                                                    )}
-                                                </div>
+                                                {isDayOpen ? (
+                                                    <ChevronUp className="h-5 w-5 text-gray-600" />
+                                                ) : (
+                                                    <ChevronDown className="h-5 w-5 text-gray-600" />
+                                                )}
                                             </div>
 
-                                            {/* ===== Order Details (Expandable) ===== */}
-                                            {isOpen && (
-                                                <div className="border-t px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                    {/* Customer Details */}
-                                                    <div>
-                                                        <h4 className="font-semibold text-gray-900 mb-2">
-                                                            Customer Details
-                                                        </h4>
-                                                        {customer ? (
-                                                            <div className="text-sm text-gray-600 space-y-1">
-                                                                <p>
-                                                                    <span className="font-medium">Name:</span>{" "}
-                                                                    {customer.name}
-                                                                </p>
-                                                                <p>
-                                                                    <span className="font-medium">Phone:</span>{" "}
-                                                                    {customer.phone}
-                                                                </p>
-                                                                <p>
-                                                                    <span className="font-medium">Address:</span>{" "}
-                                                                    {customer.address}
-                                                                </p>
-                                                            </div>
-                                                        ) : (
-                                                            <p className="text-sm text-gray-500">
-                                                                Customer information not available
-                                                            </p>
-                                                        )}
-                                                    </div>
+                                            {/* ===== Orders Under This Day ===== */}
+                                            {isDayOpen && (
+                                                <div className="divide-y">
+                                                    {dayOrders.map((order) => {
+                                                        const isOpen = expandedOrders.has(order.id);
+                                                        const customer = order.customers;
+                                                        const items = order.order_items || [];
 
-                                                    {/* Order Items */}
-                                                    <div>
-                                                        <h4 className="font-semibold text-gray-900 mb-2">
-                                                            Order Items
-                                                        </h4>
-                                                        <div className="space-y-2">
-                                                            {items.map((item) => (
+                                                        return (
+                                                            <div key={order.id}>
+
+                                                                {/* Order Header */}
                                                                 <div
-                                                                    key={item.id}
-                                                                    className="flex justify-between text-sm bg-gray-50 rounded-lg px-3 py-2"
+                                                                    onClick={() => toggleOrder(order.id)}
+                                                                    className="cursor-pointer px-6 py-4 flex justify-between items-center hover:bg-gray-50 transition"
                                                                 >
-                                                                    <span className="text-gray-700">
-                                                                        {item.products?.name || "Product"}
-                                                                    </span>
-                                                                    <span className="font-semibold">
-                                                                        {item.quantity} × ₹{item.price} = ₹
-                                                                        {item.subtotal}
-                                                                    </span>
+                                                                    <div>
+                                                                        <p className="font-semibold">
+                                                                            {customer?.name || order.id.slice(0, 8)}
+                                                                        </p>
+                                                                        <p className="text-sm text-gray-500">
+                                                                            {new Date(order.created_at).toLocaleTimeString([], {
+                                                                                hour: "2-digit",
+                                                                                minute: "2-digit",
+                                                                            })}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    <div className="flex items-center gap-4">
+                                                                        <span className="font-semibold text-blue-600">
+                                                                            ₹{order.final_amount}
+                                                                        </span>
+
+                                                                        {isOpen ? (
+                                                                            <ChevronUp className="h-5 w-5 text-gray-600" />
+                                                                        ) : (
+                                                                            <ChevronDown className="h-5 w-5 text-gray-600" />
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
 
-                                                    {/* Total */}
-                                                    <div className="space-y-1 text-sm w-fit">
-                                                        <div className="flex justify-between">
-                                                            <span>Subtotal</span>
-                                                            <span>₹{(order.total_amount ?? 0)}</span>
-                                                        </div>
+                                                                {/* Order Details */}
+                                                                {isOpen && (
+                                                                    <div className="px-6 pb-4 grid md:grid-cols-2 gap-6">
+                                                                        <div>
+                                                                            <h4 className="font-semibold mb-2">Customer</h4>
+                                                                            <p>{customer?.name}</p>
+                                                                            <p className="text-sm text-gray-600">
+                                                                                {customer?.phone}
+                                                                            </p>
+                                                                            <p className="text-sm text-gray-600">
+                                                                                {customer?.address}
+                                                                            </p>
+                                                                        </div>
 
-                                                        <div className="flex justify-between">
-                                                            <span>Delivery</span>
-                                                            <span>₹{(order.delivery_charge ?? 0)}</span>
-                                                        </div>
-                                                        <div className="flex justify-between text-red-600">
-                                                            <span>Discount</span>
-                                                            <span>-₹{(order.discount_amount ?? 0)}</span>
-                                                        </div>
-                                                        <div className="flex justify-between font-semibold text-lg text-blue-600 pt-2 border-t">
-                                                            <span>Total</span>
-                                                            <span>
-                                                                ₹{(order.final_amount ?? order.total_amount ?? 0)}
-                                                            </span>
-                                                        </div>
-                                                    </div>
+                                                                        <div>
+                                                                            <h4 className="font-semibold mb-2">Items</h4>
+                                                                            {items.map((item) => (
+                                                                                <div
+                                                                                    key={item.id}
+                                                                                    className="flex justify-between text-sm bg-gray-50 rounded px-3 py-2 mb-2"
+                                                                                >
+                                                                                    <span>
+                                                                                        {item.products?.name}
+                                                                                    </span>
+                                                                                    <span>
+                                                                                        {item.quantity} × ₹{item.price}
+                                                                                    </span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
 
-
+                                                                        <div className="md:col-span-2 text-right font-bold text-lg text-blue-600">
+                                                                            Total: ₹{order.final_amount}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </div>
                                     );
                                 })}
                             </div>
+
                         )}
                     </div>
                 )}
-
-
-
             </div>
         </div>
     );

@@ -1,3 +1,4 @@
+import { ArrowLeft } from "lucide-react";
 import React, { useMemo, useState } from "react";
 
 type Customer = {
@@ -28,9 +29,10 @@ type Order = {
 
 type Props = {
   orders: Order[];
+  onBack: () => void;
 };
 
-export default function CustomerBills({ orders }: Props) {
+export default function CustomerBills({ orders, onBack }: Props) {
   const [search, setSearch] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -57,17 +59,17 @@ export default function CustomerBills({ orders }: Props) {
   }, [orders]);
 
   // ================= FILTER CUSTOMERS =================
-  const filteredCustomers = customers.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone.includes(search)
+  const filteredCustomers = customers.filter(
+    (c) =>
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.phone.includes(search)
   );
 
   // ================= CUSTOMER BILLS =================
   const customerOrders = selectedCustomer
     ? orders.filter((o) => {
         const c =
-          o.customers ||
-          {
+          o.customers || {
             id: o.customer_phone || o.id,
           };
         return c.id === selectedCustomer.id;
@@ -76,6 +78,17 @@ export default function CustomerBills({ orders }: Props) {
 
   return (
     <div className="space-y-4">
+
+      {/* ======= MAIN HEADER (BACK TO SAVED BILLS) ======= */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-blue-600 hover:text-blue-800"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Saved Bills
+        </button>
+      </div>
 
       {/* ================= BILL DETAIL VIEW ================= */}
       {selectedOrder && (
@@ -107,7 +120,7 @@ export default function CustomerBills({ orders }: Props) {
                     {item.products?.name ?? "Item"} × {item.quantity}
                   </span>
                   <span>
-                    ₹{(item.price * item.quantity)}
+                    ₹{item.price * item.quantity}
                   </span>
                 </div>
               ))}
@@ -138,7 +151,7 @@ export default function CustomerBills({ orders }: Props) {
             <div
               key={order.id}
               onClick={() => setSelectedOrder(order)}
-              className=" flex justify-between bg-white rounded-xl shadow p-4 mb-3 cursor-pointer hover:bg-gray-50"
+              className="flex justify-between bg-white rounded-xl shadow p-4 mb-3 cursor-pointer hover:bg-gray-50"
             >
               <p className="text-sm text-gray-500">
                 {new Date(order.created_at).toLocaleString()}
