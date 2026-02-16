@@ -81,7 +81,7 @@ export default function Deliver({ orders, fetchOrders }: DeliverProps) {
     };
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-4 pt-5">
             <h2 className="text-2xl font-bold">Delivery Orders</h2>
 
             {/* ================= DAY LIST ================= */}

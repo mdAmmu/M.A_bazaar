@@ -811,7 +811,7 @@ export default function EmployeeDashboard() {
                 {tab === "customers" && (
                     <div className="space-y-6">
                         {/* Tabs */}
-                        <div className="flex gap-2 border-b">
+                        <div className="flex gap-2 border-b"> 
                             <button
                                 onClick={() => setCustomerTab("existing")}
                                 className={`px-4 py-2 font-semibold border-b-2 transition ${customerTab === "existing"
@@ -1268,7 +1268,7 @@ export default function EmployeeDashboard() {
                 )}
                 {/* Orders Tab */}
                 {tab === "orders" && (
-                    <div className="space-y-6">
+                    <div className="space-y-6 pt-5">
                         <div>
                             <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
                             <p className="text-gray-600">View and manage your orders</p>
