@@ -717,7 +717,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     );
 
     const deliveryCharge = editingOrder.delivery_charge || 0;
-    const discount = editingOrder.discount_amount || 0;
+    const discount = editingOrder.discount || 0;
 
     const finalAmount = subtotal + deliveryCharge - discount;
 
@@ -772,7 +772,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         .from('orders')
         .update({
           total_amount: subtotal,
-          discount_amount: editingOrder.discount_amount || 0,
+          discount: editingOrder.discount || 0,
           final_amount: finalAmount,
         })
         .eq('id', editingOrder.id);
@@ -1518,8 +1518,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         )}
 
         {showCustomerBills ? (
-          <CustomerBills 
-            orders={orders} 
+          <CustomerBills
+            orders={orders}
             onBack={() => setShowCustomerBills(false)} />
         ) : (
           activeTab === 'bills' && (

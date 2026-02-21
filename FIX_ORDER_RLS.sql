@@ -55,36 +55,83 @@ CREATE POLICY "Users can view own orders"
     )
   );
 
--- Ensure order_items can be inserted by employees
+-- Employees/Admins can update their own orders
+DROP POLICY IF EXISTS "Users can update own orders" ON orders;
+CREATE POLICY "Users can update own orders"
+  ON orders FOR UPDATE
+  TO authenticated
+  USING (
+    employee_id = auth.uid() OR
+    EXISTS (
+      SELECT 1 FROM profiles
+      WHERE profiles.id = auth.uid()
+      AND (profiles.role = 'admin' OR profiles.role = 'employee')
+    )
+  );
+
+-- Employees/Admins can delete their own orders
+DROP POLICY IF EXISTS "Users can delete own orders" ON orders;
+CREATE POLICY "Users can delete own orders"
+  ON orders FOR DELETE
+  TO authenticated
+  USING (
+    employee_id = auth.uid() OR
+    EXISTS (
+      SELECT 1 FROM profiles
+      WHERE profiles.id = auth.uid()
+      AND (profiles.role = 'admin' OR profiles.role = 'employee')
+    )
+  );
+
+-- Ensure order_items can be inserted/updated/deleted by employees
 -- Check if order_items INSERT policy exists and update it
 DROP POLICY IF EXISTS "Users can insert order items" ON order_items;
-
 CREATE POLICY "Users can insert order items"
   ON order_items FOR INSERT
   TO authenticated
   WITH CHECK (
-    -- Allow if the order belongs to the user
     EXISTS (
       SELECT 1 FROM orders
       WHERE orders.id = order_items.order_id
-      AND orders.user_id = auth.uid()
+      AND (orders.employee_id = auth.uid() OR orders.user_id = auth.uid())
     ) OR
-    -- Allow if the order belongs to the employee
+    EXISTS (
+      SELECT 1 FROM profiles
+      WHERE profiles.id = auth.uid()
+      AND (profiles.role = 'admin' OR profiles.role = 'employee')
+    )
+  );
+
+DROP POLICY IF EXISTS "Users can update order items" ON order_items;
+CREATE POLICY "Users can update order items"
+  ON order_items FOR UPDATE
+  TO authenticated
+  USING (
     EXISTS (
       SELECT 1 FROM orders
       WHERE orders.id = order_items.order_id
-      AND orders.employee_id = auth.uid()
+      AND (orders.employee_id = auth.uid() OR orders.user_id = auth.uid())
     ) OR
-    -- Allow if user is admin
     EXISTS (
       SELECT 1 FROM profiles
       WHERE profiles.id = auth.uid()
-      AND profiles.role = 'admin'
+      AND (profiles.role = 'admin' OR profiles.role = 'employee')
+    )
+  );
+
+DROP POLICY IF EXISTS "Users can delete order items" ON order_items;
+CREATE POLICY "Users can delete order items"
+  ON order_items FOR DELETE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM orders
+      WHERE orders.id = order_items.order_id
+      AND (orders.employee_id = auth.uid() OR orders.user_id = auth.uid())
     ) OR
-    -- Allow if user is employee
     EXISTS (
       SELECT 1 FROM profiles
       WHERE profiles.id = auth.uid()
-      AND profiles.role = 'employee'
+      AND (profiles.role = 'admin' OR profiles.role = 'employee')
     )
   );

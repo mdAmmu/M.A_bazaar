@@ -11,13 +11,14 @@ import {
     ArrowLeft,
     Minus,
     Plus,
-    ChevronUp,
-    ChevronDown,
-    Calendar,
+    // ChevronUp,
+    // ChevronDown,
+    // Calendar,
     Navigation,
     Search,
     LogOut,
-    Truck
+    Truck,
+    // Edit
 } from "lucide-react";
 
 import { supabase, Product } from "../../lib/supabase";
@@ -26,6 +27,7 @@ import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import { AppLauncher } from "@capacitor/app-launcher";
 import Deliver from "../employee/Deliver";
+import EditOrderModal from "./EditOrderModal";
 
 
 // ===== TYPES =====
@@ -77,6 +79,7 @@ export default function EmployeeDashboard() {
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [orders, setOrders] = useState<OrderWithItems[]>([]);
     const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
+    const [editingOrder, setEditingOrder] = useState<any | null>(null);
 
     const [cart, setCart] = useState<CartItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -93,21 +96,24 @@ export default function EmployeeDashboard() {
     const [shopImage, setShopImage] = useState<File | null>(null);
     const [uploadCustomer, setUploadCustomer] = useState<Customer | null>(null);
     const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [showProductList, setShowProductList] = useState(false);
 
 
     // const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
     const [customerSearchQuery, setCustomerSearchQuery] = useState("");
     const [productSearchQuery, setProductSearchQuery] = useState("");
-
+    const [productSearch, setProductSearch] = useState("");
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-    const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+    const [editOrderFilteredProducts, setEditOrderFilteredProducts] = useState<Product[]>([]);
     const [categories, setCategories] = useState<string[]>([]);
     const [discount, setDiscount] = useState(0);
     const [editingTotalId, setEditingTotalId] = useState<string | null>(null);
     // const [deliveryCharge, setDeliveryCharge] = useState(10);
     const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
     const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+    const [selectedOrder, setSelectedOrder] = useState<any>(null);
+    const [showEditModal, setShowEditModal] = useState(false);
 
 
 
@@ -119,6 +125,13 @@ export default function EmployeeDashboard() {
 
         setCategories(cats);
     }, [products]);
+
+    // ===== PROFILE LOAD LOG =====
+    useEffect(() => {
+        if (profile) {
+            console.log("Current Employee Profile:", profile);
+        }
+    }, [profile]);
 
     useEffect(() => {
         let filtered = products;
@@ -147,7 +160,7 @@ export default function EmployeeDashboard() {
             });
         }
 
-        setFilteredProducts(filtered);
+        setEditOrderFilteredProducts(filtered);
     }, [products, selectedCategory, productSearchQuery]);
 
     // ===== AUTH =====
@@ -217,26 +230,29 @@ export default function EmployeeDashboard() {
     };
 
     const fetchOrders = async () => {
-        if (!employeeId) return;
-
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from("orders")
             .select(`
-        *,
-        customers (*),
-        order_items (
-          id,
-          quantity,
-          price,
-          subtotal,
-          products (*)
-        )
-      `)
-            .eq("employee_id", employeeId)
+            *,
+            customers(*),
+            order_items(
+              *,
+              products(*)
+            )
+          `)
             .order("created_at", { ascending: false });
 
-        setOrders((data as OrderWithItems[]) || []);
+        if (error) {
+            console.error(error);
+            return;
+        }
+
+        console.log("Fetched orders:", data);
+
+        setOrders(data);
     };
+
+
 
     // ===== LOCATION =====
     const setCurrentLocation = async () => {
@@ -535,7 +551,7 @@ export default function EmployeeDashboard() {
                     customer_id: activeCustomer.id,
                     total_amount: subtotal,
                     delivery_charge: deliveryCharge,
-                    discount_amount: discountAmount,
+                    discount: discountAmount,
                     final_amount: calculatedFinalAmount,
                     status: "pending"
                 }
@@ -564,11 +580,12 @@ export default function EmployeeDashboard() {
             cart.map((c) => ({
                 order_id: order.id,
                 product_id: c.product.id,
-                quantity: c.qty,
-                price: c.price,
-                subtotal: c.qty * c.price
+                quantity: Number(c.qty),
+                price: Number(c.price),
+                subtotal: Number(c.qty) * Number(c.price)
             }))
         );
+
 
         // Reset
         setCart([]);
@@ -576,6 +593,18 @@ export default function EmployeeDashboard() {
         await fetchOrders();
         setTab("orders");
     };
+
+    const handleEditOrder = (order: any) => {
+        setSelectedOrder(order);
+        setShowEditModal(true);
+    };
+
+    // const calculateEditingTotal = () => {
+    //     return editingItems.reduce(
+    //         (sum, item) => sum + item.quantity * item.price,
+    //         0
+    //     );
+    // };
 
 
     // ===== DELETE ORDER =====
@@ -643,12 +672,12 @@ export default function EmployeeDashboard() {
 
                     {/* Tabs */}
                     <div className="flex overflow-x-auto whitespace-nowrap scrollbar-hide px-2 py-2 gap-2">
-                        {[
+                        {([
                             { key: "products", label: "Products", icon: Package },
                             { key: "customers", label: "Customer", icon: ShoppingCart },
                             { key: "orders", label: "Orders", icon: Users },
                             { key: "deliver", label: "Deliver", icon: Truck },
-                        ].map(({ key, label, icon: Icon }) => (
+                        ] as const).map(({ key, label, icon: Icon }) => (
                             <button
                                 key={key}
                                 onClick={() => setTab(key)}
@@ -749,12 +778,12 @@ export default function EmployeeDashboard() {
                 {tab === "products" && (
                     <div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-6">
-                            {filteredProducts.length === 0 ? (
+                            {editOrderFilteredProducts.length === 0 ? (
                                 <p className="col-span-full text-center text-gray-500 py-6">
                                     No products match your search.
                                 </p>
                             ) : (
-                                filteredProducts.map((product) => (
+                                editOrderFilteredProducts.map((product) => (
                                     <div
                                         key={product.id}
                                         className="bg-white rounded-xl shadow-md overflow-hidden"
@@ -811,7 +840,7 @@ export default function EmployeeDashboard() {
                 {tab === "customers" && (
                     <div className="space-y-6">
                         {/* Tabs */}
-                        <div className="flex gap-2 border-b"> 
+                        <div className="flex gap-2 border-b">
                             <button
                                 onClick={() => setCustomerTab("existing")}
                                 className={`px-4 py-2 font-semibold border-b-2 transition ${customerTab === "existing"
@@ -1266,7 +1295,7 @@ export default function EmployeeDashboard() {
                         )}
                     </div>
                 )}
-                {/* Orders Tab */}
+                {/* order tab section */}
                 {tab === "orders" && (
                     <div className="space-y-6 pt-5">
                         <div>
@@ -1287,31 +1316,16 @@ export default function EmployeeDashboard() {
                                     return (
                                         <div key={day} className="bg-white rounded-xl shadow-md overflow-hidden">
 
-                                            {/* ===== Day Header ===== */}
+                                            {/* Day Header */}
                                             <div
                                                 onClick={() => toggleDay(day)}
-                                                className="cursor-pointer px-6 py-4 flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition"
+                                                className="cursor-pointer px-6 py-4 flex justify-between items-center bg-gray-50"
                                             >
-                                                <div className="flex items-center gap-3">
-                                                    <Calendar className="h-5 w-5 text-blue-600" />
-                                                    <h3 className="font-semibold text-lg">
-                                                        {new Date(day).toLocaleDateString("en-US", {
-                                                            weekday: "long",
-                                                            month: "short",
-                                                            day: "numeric",
-                                                            year: "numeric",
-                                                        })}
-                                                    </h3>
-                                                </div>
-
-                                                {isDayOpen ? (
-                                                    <ChevronUp className="h-5 w-5 text-gray-600" />
-                                                ) : (
-                                                    <ChevronDown className="h-5 w-5 text-gray-600" />
-                                                )}
+                                                <h3 className="font-semibold text-lg">
+                                                    {new Date(day).toLocaleDateString()}
+                                                </h3>
                                             </div>
 
-                                            {/* ===== Orders Under This Day ===== */}
                                             {isDayOpen && (
                                                 <div className="divide-y">
                                                     {dayOrders.map((order) => {
@@ -1321,21 +1335,17 @@ export default function EmployeeDashboard() {
 
                                                         return (
                                                             <div key={order.id}>
-
                                                                 {/* Order Header */}
                                                                 <div
                                                                     onClick={() => toggleOrder(order.id)}
-                                                                    className="cursor-pointer px-6 py-4 flex justify-between items-center hover:bg-gray-50 transition"
+                                                                    className="cursor-pointer px-6 py-4 flex justify-between"
                                                                 >
                                                                     <div>
                                                                         <p className="font-semibold">
                                                                             {customer?.name || order.id.slice(0, 8)}
                                                                         </p>
                                                                         <p className="text-sm text-gray-500">
-                                                                            {new Date(order.created_at).toLocaleTimeString([], {
-                                                                                hour: "2-digit",
-                                                                                minute: "2-digit",
-                                                                            })}
+                                                                            {new Date(order.created_at).toLocaleTimeString()}
                                                                         </p>
                                                                     </div>
 
@@ -1343,63 +1353,52 @@ export default function EmployeeDashboard() {
                                                                         <span className="font-semibold text-blue-600">
                                                                             ₹{order.final_amount}
                                                                         </span>
-
-                                                                        {isOpen ? (
-                                                                            <ChevronUp className="h-5 w-5 text-gray-600" />
-                                                                        ) : (
-                                                                            <ChevronDown className="h-5 w-5 text-gray-600" />
-                                                                        )}
                                                                     </div>
                                                                 </div>
 
                                                                 {/* Order Details */}
                                                                 {isOpen && (
                                                                     <div className="px-6 pb-4 grid md:grid-cols-2 gap-6">
-                                                                        <div>
-                                                                            <h4 className="font-semibold mb-2">Customer</h4>
-                                                                            <p>{customer?.name}</p>
-                                                                            <p className="text-sm text-gray-600">
-                                                                                {customer?.phone}
-                                                                            </p>
-                                                                            <p className="text-sm text-gray-600">
-                                                                                {customer?.address}
-                                                                            </p>
+
+                                                                        {/* Customer */}
+                                                                        <div className="flex justify-between">
+                                                                            <div>
+                                                                                <h4 className="font-semibold mb-2">Customer</h4>
+                                                                                <p>{customer?.name}</p>
+                                                                                <p className="text-sm text-gray-600">
+                                                                                    {customer?.phone}
+                                                                                </p>
+                                                                                <p className="text-sm text-gray-600">
+                                                                                    {customer?.address}
+                                                                                </p>
+                                                                            </div>
+
+                                                                            <button
+                                                                                onClick={() => handleEditOrder(order)}
+                                                                                className="bg-red-600 text-white px-3 py-2 rounded"
+                                                                            >
+                                                                                Edit
+                                                                            </button>
                                                                         </div>
 
+                                                                        {/* Items */}
                                                                         <div>
                                                                             <h4 className="font-semibold mb-2">Items</h4>
+
                                                                             {items.map((item) => (
                                                                                 <div
                                                                                     key={item.id}
-                                                                                    className="flex items-center justify-between bg-gray-50 rounded px-3 py-2 mb-2"
+                                                                                    className="flex justify-between bg-gray-50 rounded px-3 py-2 mb-2"
                                                                                 >
-                                                                                    {/* Left Side: Image + Name */}
-                                                                                    <div className="flex items-center gap-3">
-                                                                                        <img
-                                                                                            src={item.products?.image_url || "/placeholder.png"}
-                                                                                            alt={item.products?.name}
-                                                                                            className="w-12 h-12 object-cover rounded-md border"
-                                                                                        />
-
-                                                                                        <div>
-                                                                                            <p className="text-sm font-medium">
-                                                                                                {item.products?.name}
-                                                                                            </p>
-                                                                                            <p className="text-xs text-gray-500">
-                                                                                                ₹{item.price} each
-                                                                                            </p>
-                                                                                        </div>
-                                                                                    </div>
-
-                                                                                    {/* Right Side: Quantity */}
-                                                                                    <div className="text-sm font-semibold">
+                                                                                    <span>{item.products?.name}</span>
+                                                                                    <span>
                                                                                         {item.quantity} × ₹{item.price}
-                                                                                    </div>
+                                                                                    </span>
                                                                                 </div>
                                                                             ))}
-
                                                                         </div>
 
+                                                                        {/* Total */}
                                                                         <div className="md:col-span-2 text-right font-bold text-lg text-blue-600">
                                                                             Total: ₹{order.final_amount}
                                                                         </div>
@@ -1414,10 +1413,11 @@ export default function EmployeeDashboard() {
                                     );
                                 })}
                             </div>
-
                         )}
                     </div>
                 )}
+
+
                 {/* shop image upload model function */}
                 {uploadCustomer && (
                     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -1461,7 +1461,354 @@ export default function EmployeeDashboard() {
                         </div>
                     </div>
                 )}
+                <EditOrderModal
+                    order={selectedOrder}
+                    products={products}
+                    open={showEditModal}
+                    onClose={() => {
+                        setShowEditModal(false);
+                        setSelectedOrder(null);
+                    }}
+                    onSaved={fetchOrders}
+                />
             </div>
         </div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// {/* Orders Tab */}
+// {tab === "orders" && (
+//     <div className="space-y-6 pt-5">
+//         <div>
+//             <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
+//             <p className="text-gray-600">View and manage your orders</p>
+//         </div>
+
+//         {orders.length === 0 ? (
+//             <div className="bg-white rounded-xl shadow-md p-12 text-center">
+//                 <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+//                 <p className="text-gray-600">No orders yet.</p>
+//             </div>
+//         ) : (
+//             <div className="space-y-6">
+//                 {groupedOrders.map(([day, dayOrders]) => {
+//                     const isDayOpen = expandedDays.has(day);
+
+//                     return (
+//                         <div key={day} className="bg-white rounded-xl shadow-md overflow-hidden">
+
+//                             {/* ===== Day Header ===== */}
+//                             <div
+//                                 onClick={() => toggleDay(day)}
+//                                 className="cursor-pointer px-6 py-4 flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition"
+//                             >
+//                                 <div className="flex items-center gap-3">
+//                                     <Calendar className="h-5 w-5 text-blue-600" />
+//                                     <h3 className="font-semibold text-lg">
+//                                         {new Date(day).toLocaleDateString("en-US", {
+//                                             weekday: "long",
+//                                             month: "short",
+//                                             day: "numeric",
+//                                             year: "numeric",
+//                                         })}
+//                                     </h3>
+//                                 </div>
+
+//                                 {isDayOpen ? (
+//                                     <ChevronUp className="h-5 w-5 text-gray-600" />
+//                                 ) : (
+//                                     <ChevronDown className="h-5 w-5 text-gray-600" />
+//                                 )}
+//                             </div>
+
+//                             {/* ===== Orders Under This Day ===== */}
+//                             {isDayOpen && (
+//                                 <div className="divide-y">
+//                                     {dayOrders.map((order) => {
+//                                         const isOpen = expandedOrders.has(order.id);
+//                                         const customer = order.customers;
+//                                         const items = order.order_items || [];
+
+//                                         return (
+//                                             <div key={order.id}>
+
+//                                                 {/* Order Header */}
+//                                                 <div
+//                                                     onClick={() => toggleOrder(order.id)}
+//                                                     className="cursor-pointer px-6 py-4 flex justify-between items-center hover:bg-gray-50 transition"
+//                                                 >
+//                                                     <div>
+//                                                         <p className="font-semibold">
+//                                                             {customer?.name || order.id.slice(0, 8)}
+//                                                         </p>
+//                                                         <p className="text-sm text-gray-500">
+//                                                             {new Date(order.created_at).toLocaleTimeString([], {
+//                                                                 hour: "2-digit",
+//                                                                 minute: "2-digit",
+//                                                             })}
+//                                                         </p>
+//                                                     </div>
+
+//                                                     <div className="flex items-center gap-4">
+//                                                         <span className="font-semibold text-blue-600">
+//                                                             ₹{order.final_amount}
+//                                                         </span>
+
+//                                                         {isOpen ? (
+//                                                             <ChevronUp className="h-5 w-5 text-gray-600" />
+//                                                         ) : (
+//                                                             <ChevronDown className="h-5 w-5 text-gray-600" />
+//                                                         )}
+//                                                     </div>
+//                                                 </div>
+
+//                                                 {/* Order Details */}
+//                                                 {isOpen && (
+//                                                     <div className="px-6 pb-4 grid md:grid-cols-2 gap-6">
+//                                                         <div className="flex flex-row justify-between">
+//                                                             <div>
+//                                                                 <h4 className="font-semibold mb-2">Customer</h4>
+//                                                                 <p>{customer?.name}</p>
+//                                                                 <p className="text-sm text-gray-600">
+//                                                                     {customer?.phone}
+//                                                                 </p>
+//                                                                 <p className="text-sm text-gray-600">
+//                                                                     {customer?.address}
+//                                                                 </p>
+//                                                             </div>
+//                                                             <div>
+//                                                                 <button
+//                                                                     onClick={() => handleEditOrder(order)}
+//                                                                     title="Edit Order"
+//                                                                     className="flex items-center justify-center gap-2 bg-red-600 text-white px-2 py-2 sm:px-4 sm:py-2 rounded-full sm:rounded-lg hover:bg-blue-700 transition"
+//                                                                 >
+//                                                                     <Edit className="h-4 w-4" />
+//                                                                 </button>
+//                                                             </div>
+//                                                         </div>
+
+//                                                         <div>
+//                                                             <h4 className="font-semibold mb-2">Items</h4>
+
+//                                                             {editingOrder?.id === order.id ? (
+
+
+
+//                                                                 // ===== EDIT MODE =====
+//                                                                 <div>
+
+//                                                                     <div className="mb-3 relative">
+
+//                                                                         {/* Trigger Button */}
+//                                                                         <button
+//                                                                             onClick={() => {
+//                                                                                 setShowProductList(prev => !prev)
+//                                                                                 setProductSearch("");
+//                                                                             }}
+//                                                                             className="border rounded px-3 py-2 w-full text-left bg-white"
+//                                                                         >
+//                                                                             Add Product
+//                                                                         </button>
+
+//                                                                         {/* Product List */}
+//                                                                         {showProductList && (
+//                                                                             <div className="absolute z-50 bg-white border rounded shadow-md w-full max-h-80 overflow-y-auto">
+
+//                                                                                 {/* 🔍 Search Input */}
+//                                                                                 <div className="p-2 border-b bg-gray-50">
+//                                                                                     <input
+//                                                                                         type="text"
+//                                                                                         placeholder="Search by name or ID..."
+//                                                                                         value={productSearch}
+//                                                                                         onChange={(e) => setProductSearch(e.target.value)}
+//                                                                                         className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+//                                                                                     />
+//                                                                                 </div>
+
+//                                                                                 {/* Product List */}
+//                                                                                 {products.filter(product =>
+//                                                                                     product.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+//                                                                                     product.id.toLowerCase().includes(productSearch.toLowerCase())
+//                                                                                 ).length === 0 ? (
+
+//                                                                                     <p className="p-3 text-sm text-gray-500 text-center">
+//                                                                                         No products found
+//                                                                                     </p>
+
+//                                                                                 ) : (
+
+//                                                                                     products
+//                                                                                         .filter(product =>
+//                                                                                             product.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+//                                                                                             product.id.toLowerCase().includes(productSearch.toLowerCase())
+//                                                                                         )
+//                                                                                         .map(product => (
+//                                                                                             <div
+//                                                                                                 key={product.id}
+//                                                                                                 onClick={() => {
+//                                                                                                     addProductToOrder(product);
+//                                                                                                     setShowProductList(false);
+//                                                                                                     setProductSearch("");
+//                                                                                                 }}
+//                                                                                                 className="flex items-center gap-3 px-3 py-2 hover:bg-gray-100 cursor-pointer"
+//                                                                                             >
+//                                                                                                 <img
+//                                                                                                     src={product.image_url || "/placeholder.png"}
+//                                                                                                     alt={product.name}
+//                                                                                                     className="w-10 h-10 object-cover rounded"
+//                                                                                                 />
+
+//                                                                                                 <div>
+//                                                                                                     <p className="text-sm font-medium">{product.name}</p>
+//                                                                                                     <p className="text-xs text-gray-500">₹{product.price}</p>
+//                                                                                                     <p className="text-xs text-gray-400">
+//                                                                                                         ID: {product.id.slice(0, 8)}
+//                                                                                                     </p>
+//                                                                                                 </div>
+//                                                                                             </div>
+//                                                                                         ))
+//                                                                                 )}
+
+
+//                                                                             </div>
+//                                                                         )}
+
+
+//                                                                     </div>
+
+//                                                                     {editingItems.map((item) => (
+//                                                                         <div
+//                                                                             key={item.id}
+//                                                                             className="flex items-center justify-between bg-gray-50 rounded px-3 py-2 mb-2"
+//                                                                         >
+//                                                                             <span className="text-sm font-medium">
+//                                                                                 {item.products?.name}
+//                                                                             </span>
+
+//                                                                             <div className="flex items-center gap-2">
+
+//                                                                                 <button
+//                                                                                     onClick={() => decreaseQty(item.id)}
+//                                                                                     className="bg-gray-200 px-2 rounded"
+//                                                                                 >
+//                                                                                     -
+//                                                                                 </button>
+
+//                                                                                 <span>{item.quantity}</span>
+
+//                                                                                 <button
+//                                                                                     onClick={() => increaseQty(item.product_id)}
+//                                                                                     className="bg-gray-200 px-2 rounded"
+//                                                                                 >
+//                                                                                     +
+//                                                                                 </button>
+
+//                                                                             </div>
+//                                                                         </div>
+//                                                                     ))}
+
+//                                                                     {/* Total */}
+//                                                                     <div className="text-right font-bold text-lg text-blue-600 mt-2">
+//                                                                         Total: ₹{calculateFinalAmount(
+//                                                                             calculateEditingTotal(),
+//                                                                             editingOrder?.delivery_charge || 0,
+//                                                                             editingOrder?.discount_amount || 0
+//                                                                         )}
+//                                                                     </div>
+
+
+//                                                                     {/* Save Button */}
+//                                                                     <button
+//                                                                         onClick={saveEditedOrder}
+//                                                                         className="mt-3 bg-green-600 text-white px-4 py-2 rounded"
+//                                                                     >
+//                                                                         Save Changes
+//                                                                     </button>
+//                                                                     <button
+//                                                                         onClick={() => {
+//                                                                             setEditingOrder(null);
+//                                                                             setEditingItems([]);
+//                                                                         }}
+//                                                                         className="ml-3 bg-gray-500 text-white px-4 py-2 rounded"
+//                                                                     >
+//                                                                         Cancel
+//                                                                     </button>
+
+//                                                                 </div>
+
+//                                                             ) : (
+
+//                                                                 // ===== NORMAL VIEW MODE =====
+//                                                                 items.map((item) => (
+//                                                                     <div
+//                                                                         key={item.id}
+//                                                                         className="flex items-center justify-between bg-gray-50 rounded px-3 py-2 mb-2"
+//                                                                     >
+//                                                                         <div className="flex items-center gap-3">
+//                                                                             <img
+//                                                                                 src={item.products?.image_url || "/placeholder.png"}
+//                                                                                 alt={item.products?.name}
+//                                                                                 className="w-12 h-12 object-cover rounded-md border"
+//                                                                             />
+
+//                                                                             <div>
+//                                                                                 <p className="text-sm font-medium">
+//                                                                                     {item.products?.name}
+//                                                                                 </p>
+//                                                                                 <p className="text-xs text-gray-500">
+//                                                                                     ₹{item.price} each
+//                                                                                 </p>
+//                                                                             </div>
+//                                                                         </div>
+
+//                                                                         <div className="text-sm font-semibold">
+//                                                                             {item.quantity} × ₹{item.price}
+//                                                                         </div>
+//                                                                     </div>
+//                                                                 ))
+//                                                             )}
+//                                                         </div>
+
+//                                                         {editingOrder?.id !== order.id && (
+//                                                             <div className="md:col-span-2 text-right font-bold text-lg text-blue-600">
+//                                                                 Total: ₹{order.final_amount}
+//                                                             </div>
+//                                                         )}
+
+//                                                     </div>
+//                                                 )}
+//                                             </div>
+//                                         );
+//                                     })}
+//                                 </div>
+//                             )}
+//                         </div>
+//                     );
+//                 })}
+//             </div>
+
+//         )}
+//     </div>
+// )}
