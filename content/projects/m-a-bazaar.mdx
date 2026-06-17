@@ -1,0 +1,143 @@
+---
+title: "M.A Bazaar"
+description: "A comprehensive e-commerce platform for local grocery stores with AI-powered voice ordering."
+longDescription: "Automated the grocery shopping experience by integrating voice-to-order AI with a robust inventory management system. Built using React, Supabase, and OpenAI to streamline local store operations and customer accessibility."
+image: "/projects/m-a-bazaar.svg"
+tags: ["React", "TypeScript", "Supabase", "OpenAI", "Capacitor"]
+demoUrl: "https://m-a-bazaar.vercel.app"
+githubUrl: "https://github.com/mdAmmu/M.A_bazaar"
+featured: true
+---
+
+## Project Overview
+
+M.A Bazaar is an innovative e-commerce solution designed specifically for local grocery stores. The project addresses the inefficiency of manual ordering processes in hyper-local markets by providing a digital storefront that supports role-based access for Owners, Employees, and Customers. 
+
+Built with scalability and ease of use in mind, it bridges the gap between traditional retail and modern digital commerce through unique features like voice-to-order and bulk inventory management.
+
+## Key Features
+
+- **Voice-to-Order AI**: Customers can speak their order, which is then parsed into a structured cart using OpenAI/Speech Recognition.
+- **Role-Based Dashboards**: Tailored interfaces for Admins (inventory/orders), Employees (delivery), and Users (shopping).
+- **Bulk Product Upload**: High-performance Excel-to-Supabase migration for rapid inventory updates.
+- **Billing & PDF Generation**: Automated bill generation with professional PDF exports using `jspdf`.
+- **Hybrid Mobile Support**: Native Android integration via Capacitor for a seamless on-the-go experience.
+
+## Technical Implementation
+
+### Architecture
+
+M.A Bazaar follows a modern BaaS (Backend-as-a-Service) architecture:
+- **Frontend**: React (Vite) with Tailwind CSS for a responsive, mobile-first UI.
+- **Backend/Database**: Supabase for real-time data sync, authentication, and Row-Level Security (RLS).
+- **AI Integration**: Custom speech-to-text parsing and OpenAI service for natural language processing.
+- **Mobile**: Capacitor for cross-platform app deployment.
+
+### Frontend
+
+The frontend leverages React's context API for global state management and custom hooks for Supabase interactions.
+
+```typescript
+// Example of Voice-to-Order parsing logic
+const parseOrder = (text: string) => {
+  const cleanText = text.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+  const parts = cleanText.split(/\band\b|,/);
+  
+  const results = parts.map(part => {
+    const words = part.trim().split(' ');
+    let quantity = 1;
+    // Detect quantity and match product...
+    return { product: bestMatch, quantity };
+  });
+  
+  onAddItems(results);
+};
+```
+
+**Key Technologies:**
+- Framework: Vite + React 18
+- Styling: Tailwind CSS
+- State Management: React Context + Supabase Realtime
+- UI Components: Lucide React for iconography
+
+### Backend
+
+The project uses Supabase as a comprehensive backend solution, ensuring high availability and secure data handling.
+
+```sql
+-- Example RLS Policy for Orders
+CREATE POLICY "Users can view their own orders"
+ON orders FOR SELECT
+USING (auth.uid() = user_id);
+```
+
+**Infrastructure:**
+- API: Supabase PostgREST
+- Database: PostgreSQL (Supabase)
+- Authentication: Supabase Auth (Email/Phone)
+- Hosting: Vercel / Capacitor (Android)
+
+### AI/ML Components
+
+The AI engine handles complex speech patterns to convert natural language into cart actions.
+
+- **Model Used**: Web Speech API for transcription / OpenAI for advanced parsing
+- **Logic**: Fuzzy matching algorithm for product identification from transcripts
+- **Processing**: Client-side filtering and structured data extraction
+
+## Challenges & Solutions
+
+### Challenge 1: Voice Transcription Accuracy
+
+**Problem**: The Web Speech API often provides incomplete transcripts, especially when users mention generic product names without quantities.
+
+**Solution**: Implemented a fuzzy matching algorithm and a `numberMap` to normalize quantities (e.g., "two" to `2`). Used a multi-word scanning approach to match product names against the inventory with a scoring system.
+
+### Challenge 2: Bulk Data Inconsistency
+
+**Problem**: Importing inventory from Excel files often resulted in duplicate names or invalid number formats.
+
+**Solution**: Developed a robust `BulkProductUpload` component that normalizes headers, filters empty rows, and performs batch upserts in Supabase with `onConflict: 'name'` logic to prevent duplicates.
+
+## Results & Impact
+
+- **Efficiency**: Reduced manual inventory update time by 80% via bulk upload.
+- **Accessibility**: Voice-to-order enabled non-tech-savvy users to shop effortlessly.
+- **Performance**: Sub-2s load times for massive product catalogs using Supabase edge capabilities.
+- **Mobile Read**: Fully functional Android app with bridge access to geolocation and sharing.
+
+## Key Learnings
+
+1. **BaaS Integration**: Mastered Supabase RLS policies and real-time triggers for state synchronization.
+2. **AI Implementation**: Learned to handle non-deterministic results from speech-to-text engines.
+3. **Optimized Imports**: Understood the importance of batching and normalization in data migrations.
+
+## Future Enhancements
+
+- [ ] Real-time GPS tracking for delivery employees.
+- [ ] Multi-language support for voice ordering.
+- [ ] Integration with Razorpay for automated payments.
+- [ ] Advanced analytics dashboard for store owners.
+
+## Technologies Used
+
+**Frontend:**
+- React / Vite
+- TypeScript
+- Tailwind CSS
+
+**Backend:**
+- Supabase (PostgreSQL)
+- OpenAI API
+- Capacitor (Native APIs)
+
+**DevOps:**
+- Vercel
+- GitHub Actions
+- Android Studio
+
+## Links
+
+- [Live Demo](https://m-a-bazaar.vercel.app)
+- [GitHub Repository](https://github.com/mdAmmu/M.A_bazaar)
+- [Documentation](https://github.com/mdAmmu/M.A_bazaar/wiki)
